@@ -110,7 +110,7 @@ def bootstrap_dependency_ci(
     return float(np.quantile(estimates, alpha)), float(np.quantile(estimates, 1 - alpha))
 
 
-def ideal_dina_responses(alpha: NDArray[np.int_], q_matrix: NDArray[np.int_]) -> NDArray[np.int_):
+def ideal_dina_responses(alpha: NDArray[np.int_], q_matrix: NDArray[np.int_]) -> NDArray[np.int_]:
     alpha = np.asarray(alpha, dtype=np.int8)
     q_matrix = np.asarray(q_matrix, dtype=np.int8)
     if alpha.ndim != 2 or q_matrix.ndim != 2 or alpha.shape[1] != q_matrix.shape[1]:
