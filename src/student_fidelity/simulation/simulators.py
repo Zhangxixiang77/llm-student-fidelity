@@ -26,6 +26,12 @@ class Item:
     index: int
 
 
+class StructuredAnswerError(ValueError):
+    def __init__(self, raw_response: str):
+        super().__init__("model output must include a parseable final_answer field")
+        self.raw_response = raw_response
+
+
 @dataclass
 class SimulationAnswer:
     final_answer: str
@@ -90,11 +96,19 @@ class OpenAICompatibleSimulator(StudentSimulator):
         base_url: str = "https://api.openai.com/v1",
         api_key_env: str = "OPENAI_API_KEY",
         timeout: float = 120.0,
+        extra_body: dict[str, Any] | None = None,
+        temperature_supported: bool = True,
+        fixed_temperature: float | None = None,
     ):
+        if fixed_temperature is not None and not 0 <= fixed_temperature <= 2:
+            raise ValueError("fixed_temperature must be between zero and two")
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key_env = api_key_env
         self.timeout = timeout
+        self.extra_body = dict(extra_body or {})
+        self.temperature_supported = temperature_supported
+        self.fixed_temperature = fixed_temperature
 
     def answer(
         self,
@@ -121,14 +135,25 @@ Previous answers by this student:
 Current question ({item.item_id}):
 {item.text}
 """
+        if not self.temperature_supported:
+            if self.fixed_temperature is None:
+                raise ValueError("fixed_temperature is required when temperature is unsupported")
+            if temperature != self.fixed_temperature:
+                raise ValueError(
+                    f"{self.model} fixes temperature at {self.fixed_temperature}; "
+                    f"refusing to record an unapplied value of {temperature}"
+                )
+        request_body = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            **self.extra_body,
+        }
+        if self.temperature_supported:
+            request_body["temperature"] = temperature
         response = httpx.post(
             f"{self.base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-            },
+            json=request_body,
             timeout=self.timeout,
         )
         response.raise_for_status()
@@ -143,15 +168,34 @@ Current question ({item.item_id}):
             "model": self.model,
             "base_url": self.base_url,
             "network_access": True,
+            "temperature_supported": self.temperature_supported,
+            "fixed_temperature": self.fixed_temperature,
+            "extra_body": self.extra_body,
         }
 
 
 def parse_structured_answer(content: str) -> tuple[str, str]:
-    match = re.search(r"\{.*\}", content, flags=re.DOTALL)
-    if not match:
-        raise ValueError("model output did not contain a JSON object")
-    try:
-        payload = json.loads(match.group(0))
-        return str(payload["final_answer"]), str(payload.get("work", ""))
-    except (json.JSONDecodeError, KeyError, TypeError) as error:
-        raise ValueError("model output must include string field final_answer") from error
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", content):
+        try:
+            payload, _ = decoder.raw_decode(content[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and "final_answer" in payload:
+            return str(payload["final_answer"]), str(payload.get("work", ""))
+
+    # Some compatible endpoints emit JSON-like flow mappings with unquoted keys.
+    final = re.search(
+        r"[\"']?final_answer[\"']?\s*:\s*([\"'])(.*?)\1", content, flags=re.DOTALL
+    )
+    if final:
+        work = re.search(r"[\"']?work[\"']?\s*:\s*([\"'])(.*?)\1", content, flags=re.DOTALL)
+        return final.group(2), work.group(2) if work else ""
+    numeric = re.search(
+        r"[\"']?final_answer[\"']?\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:\s*/\s*[+-]?\d+)?)",
+        content,
+    )
+    if numeric:
+        work = re.search(r"[\"']?work[\"']?\s*:\s*([\"'])(.*?)\1", content, flags=re.DOTALL)
+        return numeric.group(1), work.group(2) if work else ""
+    raise StructuredAnswerError(content)

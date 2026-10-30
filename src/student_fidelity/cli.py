@@ -19,7 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     demo = subparsers.add_parser("demo", help="run an entirely offline synthetic-data smoke test")
-    demo.add_argument("--output-dir", default="runs/demo")
+    demo.add_argument("--output-dir", default="runs/demo", help="output directory")
     demo.add_argument("--students", type=int, default=40, help="virtual students per condition")
     demo.add_argument("--noise-repeats", type=int, default=10)
     demo.add_argument("--seed", type=int, default=42)
@@ -58,6 +58,7 @@ def main() -> None:
             temperature=float(config.get("temperature", 0.0)),
             noise_repeats=int(config.get("noise_repeats", 200)),
             seed=int(config.get("seed", 42)),
+            resume=bool(config.get("resume", False)),
         )
     output_dir = (
         args.output_dir if args.command == "demo" else config.get("output_dir", "runs/pilot")

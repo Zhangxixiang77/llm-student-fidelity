@@ -39,6 +39,7 @@ def execute_pilot(
     temperature: float = 0.0,
     noise_repeats: int = 200,
     seed: int = 42,
+    resume: bool = False,
 ) -> dict[str, Any]:
     """Run one experimental cell; callers must repeat cells/seeds for the full design."""
 
@@ -72,6 +73,9 @@ def execute_pilot(
             base_url=simulator_config.get("base_url", "https://api.openai.com/v1"),
             api_key_env=simulator_config.get("api_key_env", "OPENAI_API_KEY"),
             timeout=float(simulator_config.get("timeout", 120)),
+            extra_body=simulator_config.get("extra_body"),
+            temperature_supported=bool(simulator_config.get("temperature_supported", True)),
+            fixed_temperature=simulator_config.get("fixed_temperature"),
         )
     else:
         raise ValueError(f"unsupported simulator type: {simulator_type}")
@@ -84,6 +88,7 @@ def execute_pilot(
         state=state,
         temperature=temperature,
         seed=seed,
+        resume=resume,
     )
     np.savetxt(output_dir / "assigned_alpha.csv", target_alpha, fmt="%d", delimiter=",")
 
