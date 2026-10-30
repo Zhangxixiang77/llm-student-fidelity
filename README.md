@@ -40,7 +40,8 @@ PYTHONPATH=src python -m student_fidelity.cli demo --output-dir runs/demo
 runs/demo/
 ├── summary.json             # 设计、模型元数据、噪声界值和全部结果
 ├── metrics.csv              # 各条件主要数值指标
-├── raw_simulation.jsonl      # 每名虚拟学生每题的最终答案、演算与原始输出
+├── raw_simulation.jsonl      # 最终答案、原始输出、finish reason 与 token usage
+├── run_manifest.json         # 防止跨配置续跑的数据/设计/模型配置指纹
 ├── assigned_alpha.csv        # 指定的属性掌握模式
 ├── split_half_noise.csv
 └── generated/               # 模拟器及各基线的二元作答矩阵
@@ -63,7 +64,7 @@ export OPENAI_API_KEY='...'
 student-fidelity pilot --config configs/pilot.real-model.yaml
 ```
 
-MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-M3`，从环境变量 `MINIMAX_API_KEY` 读取密钥，不发送 `temperature`，并把实际固定值 1.0 记录在元数据中；若请求 temperature 0 会直接拒绝，避免伪造解码条件。`resume: true` 会保留已有成功记录并只补缺失题目，只能用于同一数据、人设、题目顺序和模型配置的续跑。
+MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-M3`，从环境变量 `MINIMAX_API_KEY` 读取密钥，不发送 `temperature`，并把实际固定值 1.0 记录在元数据中；若请求 temperature 0 会直接拒绝，避免伪造解码条件。`resume: true` 会保留已有成功记录并只补缺失题目；`run_manifest.json` 会比对数据、题目、人设、模型与解码配置，配置改变时拒绝续跑。`max_calls` 是累计请求硬上限，成功和失败请求都计入，续跑不会重置额度。
 
 部分响应即使请求禁用 thinking 仍可能包含 `<think>` 并耗尽输出上限。smoke 配置因此保留原始响应、将解析失败落盘，并使用较大的输出上限；正式实验前仍需锁定模型行为与预算。
 

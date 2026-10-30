@@ -55,6 +55,31 @@ class SimulationTests(unittest.TestCase):
             np.testing.assert_array_equal(resumed, responses)
             self.assertEqual(len(output.read_text().splitlines()), 24)
 
+    def test_call_budget_is_cumulative_across_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = make_synthetic_cdm_dataset(
+                n_students=20, n_items=3, n_attributes=2, seed=10
+            )
+            fitting, holdout = train_test_split(dataset, seed=2)
+            model = DINABaseline(max_iter=5).fit(fitting)
+            personas = attribute_personas(model.sample_patterns(2, seed=3), dataset.attribute_ids)
+            output = Path(directory) / "raw.jsonl"
+            with self.assertRaisesRegex(RuntimeError, "call budget exhausted"):
+                run_simulation(
+                    holdout, DINAMockSimulator(model), personas, output, max_calls=1
+                )
+            self.assertEqual(len(output.read_text().splitlines()), 1)
+            with self.assertRaisesRegex(RuntimeError, "call budget exhausted"):
+                run_simulation(
+                    holdout,
+                    DINAMockSimulator(model),
+                    personas,
+                    output,
+                    resume=True,
+                    max_calls=1,
+                )
+            self.assertEqual(len(output.read_text().splitlines()), 1)
+
     def test_answer_parser_accepts_code_fence(self):
         final, work = parse_structured_answer(
             '```json\n{"final_answer":"3/8","work":"brief"}\n```'
@@ -87,18 +112,28 @@ class SimulationTests(unittest.TestCase):
         )
         response = Mock()
         response.json.return_value = {
-            "choices": [{"message": {"content": '{"final_answer":"6/5","work":""}'}}]
+            "model": "fixed-model-actual",
+            "choices": [
+                {
+                    "message": {"content": '{"final_answer":"6/5","work":""}'},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"total_tokens": 25},
         }
         item = Item("i1", "1/5 + 1 = ?", "6/5", np.array([1]), 0)
         with patch.dict("os.environ", {"TEST_API_KEY": "not-a-real-secret"}):
             with patch(
                 "student_fidelity.simulation.simulators.httpx.post", return_value=response
             ) as post:
-                simulator.answer(Persona(kind="none"), item, [], 1.0)
+                answer = simulator.answer(Persona(kind="none"), item, [], 1.0)
         request = post.call_args.kwargs["json"]
         self.assertNotIn("temperature", request)
         self.assertEqual(request["thinking"], {"type": "disabled"})
         self.assertEqual(simulator.metadata()["fixed_temperature"], 1.0)
+        self.assertEqual(answer.response_metadata["provider_model"], "fixed-model-actual")
+        self.assertEqual(answer.response_metadata["usage"]["total_tokens"], 25)
+        self.assertEqual(answer.response_metadata["finish_reason"], "stop")
 
     def test_fixed_temperature_provider_rejects_false_record(self):
         simulator = OpenAICompatibleSimulator(

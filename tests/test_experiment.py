@@ -27,6 +27,17 @@ class ExperimentTests(unittest.TestCase):
             self.assertTrue((output_dir / "raw_simulation.jsonl").exists())
             loaded = json.loads((output_dir / "summary.json").read_text())
             self.assertTrue(loaded["warning"].startswith("Pilot output only"))
+            self.assertTrue((output_dir / "run_manifest.json").exists())
+            with self.assertRaisesRegex(ValueError, "resume configuration differs"):
+                execute_pilot(
+                    dataset,
+                    directory,
+                    baseline_names=["independent", "dina"],
+                    n_students=5,
+                    noise_repeats=2,
+                    seed=4,
+                    resume=True,
+                )
 
 
 if __name__ == "__main__":
