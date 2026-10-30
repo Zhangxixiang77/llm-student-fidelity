@@ -2,6 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
+
+import numpy as np
 
 from student_fidelity.baselines import DINABaseline
 from student_fidelity.data import make_synthetic_cdm_dataset, train_test_split
@@ -10,7 +13,13 @@ from student_fidelity.simulation import (
     attribute_personas,
     run_simulation,
 )
-from student_fidelity.simulation.simulators import parse_structured_answer
+from student_fidelity.simulation.personas import Persona
+from student_fidelity.simulation.runner import answers_equivalent, parse_rational_answer
+from student_fidelity.simulation.simulators import (
+    Item,
+    OpenAICompatibleSimulator,
+    parse_structured_answer,
+)
 
 
 class SimulationTests(unittest.TestCase):
@@ -36,12 +45,72 @@ class SimulationTests(unittest.TestCase):
             self.assertEqual(len(records), 24)
             self.assertEqual({record["item_id"] for record in records}, set(dataset.item_ids))
 
+            class FailIfCalled:
+                def answer(self, *args):
+                    raise AssertionError("completed responses should not be requested again")
+
+            resumed = run_simulation(
+                holdout, FailIfCalled(), personas, output, state="stateful", resume=True
+            )
+            np.testing.assert_array_equal(resumed, responses)
+            self.assertEqual(len(output.read_text().splitlines()), 24)
+
     def test_answer_parser_accepts_code_fence(self):
         final, work = parse_structured_answer(
             '```json\n{"final_answer":"3/8","work":"brief"}\n```'
         )
         self.assertEqual(final, "3/8")
         self.assertEqual(work, "brief")
+
+    def test_answer_parser_accepts_unquoted_keys_and_ignores_think_braces(self):
+        final, work = parse_structured_answer(
+            '<think>{not json}</think>{final_answer: "3/8", work: "brief"}'
+        )
+        self.assertEqual(final, "3/8")
+        self.assertEqual(work, "brief")
+        self.assertEqual(parse_structured_answer('{final_answer: 0, work: "none"}')[0], "0")
+
+    def test_rational_answer_equivalence(self):
+        for answer in ["6/5", "1 1/5", "1.2", r"\frac{6}{5}", r"1\frac{1}{5}", r"$\dfrac{12}{10}$"]:
+            self.assertTrue(answers_equivalent(answer, "6/5"), answer)
+        self.assertEqual(str(parse_rational_answer("-1 1/2")), "-3/2")
+        self.assertFalse(answers_equivalent("11/5", "6/5"))
+        self.assertFalse(answers_equivalent("not a number", "6/5"))
+
+    def test_fixed_temperature_provider_omits_temperature(self):
+        simulator = OpenAICompatibleSimulator(
+            model="fixed-model",
+            api_key_env="TEST_API_KEY",
+            temperature_supported=False,
+            fixed_temperature=1.0,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        response = Mock()
+        response.json.return_value = {
+            "choices": [{"message": {"content": '{"final_answer":"6/5","work":""}'}}]
+        }
+        item = Item("i1", "1/5 + 1 = ?", "6/5", np.array([1]), 0)
+        with patch.dict("os.environ", {"TEST_API_KEY": "not-a-real-secret"}):
+            with patch(
+                "student_fidelity.simulation.simulators.httpx.post", return_value=response
+            ) as post:
+                simulator.answer(Persona(kind="none"), item, [], 1.0)
+        request = post.call_args.kwargs["json"]
+        self.assertNotIn("temperature", request)
+        self.assertEqual(request["thinking"], {"type": "disabled"})
+        self.assertEqual(simulator.metadata()["fixed_temperature"], 1.0)
+
+    def test_fixed_temperature_provider_rejects_false_record(self):
+        simulator = OpenAICompatibleSimulator(
+            model="fixed-model",
+            api_key_env="TEST_API_KEY",
+            temperature_supported=False,
+            fixed_temperature=1.0,
+        )
+        item = Item("i1", "1/5 + 1 = ?", "6/5", np.array([1]), 0)
+        with patch.dict("os.environ", {"TEST_API_KEY": "not-a-real-secret"}):
+            with self.assertRaisesRegex(ValueError, "refusing to record"):
+                simulator.answer(Persona(kind="none"), item, [], 0.0)
 
 
 if __name__ == "__main__":

@@ -62,7 +62,7 @@ class ResponseDataset:
         return self.q_matrix.shape[1]
 
     @classmethod
-    def from_directory(cls, path: str | Path) -> "ResponseDataset":
+    def from_directory(cls, path: str | Path) -> ResponseDataset:
         """Load responses.csv, q_matrix.csv, and optional items.csv from a directory."""
 
         root = Path(path)
@@ -113,7 +113,7 @@ class ResponseDataset:
             items["answer_key"] = self.answer_keys or [""] * self.n_items
             items.to_csv(root / "items.csv")
 
-    def subset_students(self, indices: Sequence[int] | NDArray[np.int_]) -> "ResponseDataset":
+    def subset_students(self, indices: Sequence[int] | NDArray[np.int_]) -> ResponseDataset:
         indices = np.asarray(indices, dtype=int)
         return ResponseDataset(
             responses=self.responses[indices],

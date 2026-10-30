@@ -5,8 +5,8 @@ import numpy as np
 from student_fidelity.baselines import (
     DINABaseline,
     GaussianCopulaBaseline,
-    IRT2PLBaseline,
     IndependentBernoulliBaseline,
+    IRT2PLBaseline,
 )
 from student_fidelity.data import make_synthetic_cdm_dataset
 
