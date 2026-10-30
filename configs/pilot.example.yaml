@@ -1,0 +1,22 @@
+# One experimental cell only. Copy this file before editing.
+dataset:
+  path: data/processed/frcsub
+output_dir: runs/frcsub_attribute_stateless_t0
+seed: 42
+n_students: 100
+persona: attribute       # none | ability | attribute
+state: stateless         # stateless | stateful
+temperature: 0.0
+noise_repeats: 200        # Lock before the real pilot; use fewer only for smoke tests.
+baselines: [independent, copula, irt, dina]
+
+simulator:
+  type: dina_mock         # Offline pipeline validation; not LLM evidence.
+
+# Real OpenAI-compatible endpoint example (never put the API key in this file):
+# simulator:
+#   type: openai_compatible
+#   model: locked-model-version
+#   base_url: https://api.openai.com/v1
+#   api_key_env: OPENAI_API_KEY
+#   timeout: 120

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+
+# Data and generated experiments
+data/raw/
+data/processed/
+runs/
+*.jsonl
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
