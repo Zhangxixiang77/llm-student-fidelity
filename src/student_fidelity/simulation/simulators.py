@@ -6,7 +6,7 @@ import json
 import os
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -30,6 +30,7 @@ class StructuredAnswerError(ValueError):
     def __init__(self, raw_response: str):
         super().__init__("model output must include a parseable final_answer field")
         self.raw_response = raw_response
+        self.response_metadata: dict[str, Any] = {}
 
 
 @dataclass
@@ -38,6 +39,7 @@ class SimulationAnswer:
     work: str
     raw_response: str
     is_correct: bool | None = None
+    response_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class StudentSimulator(ABC):
@@ -158,9 +160,21 @@ Current question ({item.item_id}):
         )
         response.raise_for_status()
         payload = response.json()
-        content = payload["choices"][0]["message"]["content"]
-        final_answer, work = parse_structured_answer(content)
-        return SimulationAnswer(final_answer, work, content)
+        choice = payload["choices"][0]
+        content = choice["message"]["content"]
+        response_metadata = {
+            "provider_model": payload.get("model", self.model),
+            "finish_reason": choice.get("finish_reason"),
+            "usage": payload.get("usage", {}),
+        }
+        try:
+            final_answer, work = parse_structured_answer(content)
+        except StructuredAnswerError as error:
+            error.response_metadata = response_metadata
+            raise
+        return SimulationAnswer(
+            final_answer, work, content, response_metadata=response_metadata
+        )
 
     def metadata(self) -> dict[str, Any]:
         return {

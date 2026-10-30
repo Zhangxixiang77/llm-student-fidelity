@@ -80,6 +80,7 @@ def run_simulation(
     temperature: float = 0.0,
     seed: int = 42,
     resume: bool = False,
+    max_calls: int | None = None,
 ) -> NDArray[np.int8]:
     if state not in {"stateless", "stateful"}:
         raise ValueError("state must be stateless or stateful")
@@ -87,6 +88,8 @@ def run_simulation(
         raise ValueError("at least one persona is required")
     if not 0 <= temperature <= 2:
         raise ValueError("temperature must be between zero and two")
+    if max_calls is not None and max_calls < 1:
+        raise ValueError("max_calls must be positive")
 
     n_students = len(personas)
     responses = np.full((n_students, dataset.n_items), -1, dtype=np.int8)
@@ -110,6 +113,7 @@ def run_simulation(
                 raise ValueError("resume file contains duplicate scored responses")
             completed.add(key)
             responses[student_index, item_index] = int(record["is_correct"])
+    attempts = len(existing_records)
     with output_path.open("w", encoding="utf-8") as output:
         for record in existing_records:
             output.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -147,6 +151,11 @@ def run_simulation(
                     q_vector=dataset.q_matrix[item_index],
                     index=int(item_index),
                 )
+                if max_calls is not None and attempts >= max_calls:
+                    raise RuntimeError(
+                        f"call budget exhausted ({max_calls}); resume only after explicit review"
+                    )
+                attempts += 1
                 try:
                     answer = simulator.answer(persona, item, history, temperature)
                 except StructuredAnswerError as error:
@@ -159,6 +168,7 @@ def run_simulation(
                         "temperature": temperature,
                         "error": str(error),
                         "raw_response": error.raw_response,
+                        "response_metadata": error.response_metadata,
                     }
                     output.write(json.dumps(failure, ensure_ascii=False) + "\n")
                     output.flush()
@@ -180,6 +190,7 @@ def run_simulation(
                     "work": answer.work,
                     "is_correct": bool(correct),
                     "raw_response": answer.raw_response,
+                    "response_metadata": answer.response_metadata,
                 }
                 output.write(json.dumps(record, ensure_ascii=False) + "\n")
                 if state == "stateful":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -40,6 +41,7 @@ def execute_pilot(
     noise_repeats: int = 200,
     seed: int = 42,
     resume: bool = False,
+    max_calls: int | None = None,
 ) -> dict[str, Any]:
     """Run one experimental cell; callers must repeat cells/seeds for the full design."""
 
@@ -80,15 +82,56 @@ def execute_pilot(
     else:
         raise ValueError(f"unsupported simulator type: {simulator_type}")
 
+    configuration = {
+        "dataset": {
+            "responses_sha256": hashlib.sha256(dataset.responses.tobytes()).hexdigest(),
+            "q_matrix_sha256": hashlib.sha256(dataset.q_matrix.tobytes()).hexdigest(),
+            "item_ids": list(dataset.item_ids),
+            "student_ids": list(dataset.student_ids),
+            "attribute_ids": list(dataset.attribute_ids),
+            "item_texts": list(dataset.item_texts) if dataset.item_texts is not None else None,
+            "answer_keys": list(dataset.answer_keys) if dataset.answer_keys is not None else None,
+        },
+        "design": {
+            "persona": persona_kind,
+            "state": state,
+            "temperature": temperature,
+            "n_virtual_students": n_students,
+            "seed": seed,
+        },
+        "simulator": simulator_config,
+    }
+    configuration_sha256 = hashlib.sha256(
+        json.dumps(configuration, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    raw_path = output_dir / "raw_simulation.jsonl"
+    manifest_path = output_dir / "run_manifest.json"
+    if resume and raw_path.exists():
+        if not manifest_path.exists():
+            raise RuntimeError("cannot safely resume without a configuration manifest")
+        previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if previous_manifest.get("configuration_sha256") != configuration_sha256:
+            raise ValueError("resume configuration differs from the previous run")
+    manifest_path.write_text(
+        json.dumps(
+            {"configuration_sha256": configuration_sha256, "configuration": configuration},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
     simulated = run_simulation(
         holdout,
         simulator,
         personas,
-        output_dir / "raw_simulation.jsonl",
+        raw_path,
         state=state,
         temperature=temperature,
         seed=seed,
         resume=resume,
+        max_calls=max_calls,
     )
     np.savetxt(output_dir / "assigned_alpha.csv", target_alpha, fmt="%d", delimiter=",")
 
@@ -134,7 +177,9 @@ def execute_pilot(
 
     summary = {
         "created_at_utc": datetime.now(UTC).isoformat(),
-        "warning": "Pilot output only; do not interpret offline mock results as LLM evidence.",
+        "warning": (
+            "Pilot output only; small cells are engineering checks, not population-level evidence."
+        ),
         "data": {
             "n_fitting_students": fitting.n_students,
             "n_holdout_students": holdout.n_students,
@@ -149,7 +194,9 @@ def execute_pilot(
             "baselines": list(baseline_names),
             "noise_repeats": noise_repeats,
             "seed": seed,
+            "max_calls": max_calls,
         },
+        "configuration_sha256": configuration_sha256,
         "simulator": simulator.metadata(),
         "noise_delta_95": delta,
         "results": results,

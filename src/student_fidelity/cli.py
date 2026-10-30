@@ -59,6 +59,7 @@ def main() -> None:
             noise_repeats=int(config.get("noise_repeats", 200)),
             seed=int(config.get("seed", 42)),
             resume=bool(config.get("resume", False)),
+            max_calls=config.get("max_calls"),
         )
     output_dir = (
         args.output_dir if args.command == "demo" else config.get("output_dir", "runs/pilot")

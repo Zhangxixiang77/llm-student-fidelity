@@ -1,9 +1,10 @@
 # Small local smoke cell. Never place API keys or generated real responses in Git.
 dataset:
   path: data/processed/frcsub
-output_dir: runs/minimax_m3_attribute_smoke
+output_dir: runs/minimax_m3_attribute_smoke_v2
 seed: 42
-n_students: 2
+n_students: 4
+max_calls: 80  # Cumulative across resume; includes failed requests.
 persona: attribute
 state: stateless
 temperature: 1.0
