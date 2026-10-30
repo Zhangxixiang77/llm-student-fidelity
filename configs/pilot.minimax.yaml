@@ -1,0 +1,25 @@
+# Small local smoke cell. Never place API keys or generated real responses in Git.
+dataset:
+  path: data/processed/frcsub
+output_dir: runs/minimax_m3_attribute_smoke
+seed: 42
+n_students: 2
+persona: attribute
+state: stateless
+temperature: 1.0
+noise_repeats: 5
+baselines: [independent, copula, irt, dina]
+
+simulator:
+  type: openai_compatible
+  model: MiniMax-M3
+  base_url: https://api.minimax.cn/v1
+  api_key_env: MINIMAX_API_KEY
+  timeout: 120
+  temperature_supported: false
+  fixed_temperature: 1.0
+  extra_body:
+    thinking:
+      type: disabled
+    max_completion_tokens: 4096
+resume: true
