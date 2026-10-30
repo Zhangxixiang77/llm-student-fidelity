@@ -36,18 +36,31 @@ item_003,1,1,1
 
 ### `items.csv`
 
-真实 LLM 生成必需，离线统计基线可省略。`item_id` 必须覆盖全部题目，`text` 是模型看到的题目原文，`answer_key` 用于最终答案精确匹配评分。
+真实 LLM 生成必需，离线统计基线可省略。`item_id` 必须覆盖全部题目，`text` 是模型看到的题目原文，`answer_key` 用于最终答案评分。
 
 ```csv
 item_id,text,answer_key
 item_001,"Question text here","3/8"
 ```
 
-当前评分器做 Unicode NFKC、大小写和空白归一化后的精确匹配。正式使用 FrcSub 前，应增加并验证分数等价、多表示答案和干扰项的专门评分规则；不要把数值等价判断交给 LLM。
+当前评分器先尝试精确数值解析，支持整数、普通分数、带符号混合数、有限小数和常见 LaTeX 分数，因此 `6/5`、`1 1/5`、`1.2` 与 `\frac{6}{5}` 等价。无法解析的文本退回 Unicode NFKC、大小写和空白归一化后的精确匹配；不要把数值等价判断交给 LLM。
 
 ## 拟合与留出
 
 `execute_pilot` 以固定种子随机按学生对半切分。所有基线参数、人设分布和回读模型只由拟合半估计，保真度统一以留出半为参照。正式研究需在外层重复整个切分 B 次，而不是只重复生成。
+
+## 从 GDINA archive 准备本地 FrcSub
+
+安装可选依赖后，把用户自行获取的 `GDINA_2.9.4.tar.gz` 转为本地 CSV：
+
+```bash
+python -m pip install -e '.[data]'
+python scripts/prepare_frcsub.py \
+  --archive /path/to/GDINA_2.9.4.tar.gz \
+  --output-dir data/processed/frcsub
+```
+
+脚本核验 536 × 20 二元作答、20 × 8 Q 矩阵及 DeCarlo (2011) Table 13，并写入 20 道 Table 12 题目和独立验算的规范答案。它不再分发源数据；输出目录被 Git 排除。许可未单独核实前，不得公开生成的数据或真实模型作答。
 
 ## FrcSub 入库前检查
 

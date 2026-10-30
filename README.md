@@ -13,6 +13,7 @@
 - 属性/能力/无人设，逐题无状态/有状态作答，题目位置循环拉丁方平衡；
 - 属性与模式回读、DINA 可达天花板、隐含 slip/guess 与能力泄漏率；
 - 离线 DINA mock 和可选 OpenAI-compatible 接口；原始输出逐条保存为 JSONL；
+- 分数/混合数/有限小数等价评分、固定温度模型适配和显式断点恢复；
 - 一个完全离线、使用合成数据的端到端 demo。
 
 **默认不访问网络、不调用付费模型、不附带 FrcSub 数据。** `demo` 的结果只验证软件流程，不能作为 LLM 证据。
@@ -61,6 +62,10 @@ student-fidelity pilot --config configs/pilot.example.yaml
 export OPENAI_API_KEY='...'
 student-fidelity pilot --config configs/pilot.real-model.yaml
 ```
+
+MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-M3`，从环境变量 `MINIMAX_API_KEY` 读取密钥，不发送 `temperature`，并把实际固定值 1.0 记录在元数据中；若请求 temperature 0 会直接拒绝，避免伪造解码条件。`resume: true` 会保留已有成功记录并只补缺失题目，只能用于同一数据、人设、题目顺序和模型配置的续跑。
+
+部分响应即使请求禁用 thinking 仍可能包含 `<think>` 并耗尽输出上限。smoke 配置因此保留原始响应、将解析失败落盘，并使用较大的输出上限；正式实验前仍需锁定模型行为与预算。
 
 每次 `pilot` 只运行一个“人设 × 状态 × 解码 × 模型”单元。完整设计需要由外层实验清单重复运行，并使用不同输出目录；不要在正式生成后修改预先锁定的关卡阈值。
 
