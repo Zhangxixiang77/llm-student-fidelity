@@ -163,19 +163,28 @@ def item_pair_fit(
         "item_level_holm_family_size": n_items - 1,
         "zero_cell_correction": "Replace each zero 2x2 cell count by 0.5 for log-OR only",
         "small_expected_cell_threshold_at_observed_n": small_expected_cell_threshold,
-        "n_pairs_with_small_expected_cells": sum(
-            pair["n_small_expected_cells"] > 0 for pair in pairs
+        "n_pairs_with_small_expected_cells": int(
+            sum(pair["n_small_expected_cells"] > 0 for pair in pairs)
         ),
-        "n_pairs_with_zero_cell_correction": sum(
-            bool(pair["observed_zero_cells_corrected"] or pair["expected_zero_cells_corrected"])
-            for pair in pairs
+        "n_pairs_with_zero_cell_correction": int(
+            sum(
+                bool(
+                    pair["observed_zero_cells_corrected"]
+                    or pair["expected_zero_cells_corrected"]
+                )
+                for pair in pairs
+            )
         ),
         "n_test_significant_holm_0_05": {
-            statistic: sum(pair[f"{statistic}_holm_test_p"] <= 0.05 for pair in pairs)
+            statistic: int(
+                sum(pair[f"{statistic}_holm_test_p"] <= 0.05 for pair in pairs)
+            )
             for statistic in ("correlation", "log_odds_ratio")
         },
         "n_item_significant_holm_0_05": {
-            statistic: sum(item[f"{statistic}_holm_item_p"] <= 0.05 for item in item_level)
+            statistic: int(
+                sum(item[f"{statistic}_holm_item_p"] <= 0.05 for item in item_level)
+            )
             for statistic in ("correlation", "log_odds_ratio")
         },
         "item_pairs": pairs,

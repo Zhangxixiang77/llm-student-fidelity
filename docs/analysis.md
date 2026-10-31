@@ -25,9 +25,9 @@ PYTHONPATH=src python scripts/audit_run.py \
 
 审计在同一个真人拟合半上估计 DINA 与 logit-link G-DINA，并在同一个留出半上比较逐学生边际对数似然。`gdina_minus_dina_mean_holdout_log_likelihood` 为正表示 G-DINA 的留出预测更好；`paired_student_bootstrap_95_ci` 通过对学生成对重采样反映这一单次切分的不确定性。区间下界大于零时，`provisional_dimension_b_model` 暂选 G-DINA，否则暂选 DINA。
 
-这只是研究计划中模型选择规则的 pilot 实现，不等于关卡 1 通过。G-DINA 使用饱和题目反应函数、弱 ridge 和确定性的 DINA 式初始化；审计记录迭代次数、收敛状态、正则化强度和名义参数量。正式分析仍需用 R 的 GDINA／CDM 复核，并完成重复切分、题目对检验和外部分类准确性验证。
+这只是研究计划中模型选择规则的 pilot 实现，不等于关卡 1 通过。G-DINA 使用饱和题目反应函数、弱 ridge 和确定性的 DINA 式初始化；审计记录迭代次数、收敛状态、正则化强度和名义参数量。正式分析仍需用 R 的 GDINA／CDM 复核，对 DINA 使用多组随机初值，并完成外部分类准确性验证。重复切分与题目对检验由下方独立命令执行。
 
-当暂选 G-DINA 时，实际回读也使用 G-DINA。`gdina_mean_residual` 是观察正确率减指定掌握模式下的模型预测正确率；`gdina_mean_master_shortfall` 在 DINA 理想掌握题上反向计算该残差，`gdina_mean_nonmaster_excess` 在非掌握题上正向计算。后两者是模型残差，不能与原始 DINA slip／guess 或关卡 3 的 0.30 界值直接混用。
+当暂选 G-DINA 时，实际回读也使用 G-DINA。`gdina_mean_residual` 是观察正确率减指定掌握模式下的模型预测正确率；`gdina_mean_master_shortfall` 在 DINA 理想掌握题上反向计算该残差，`gdina_mean_nonmaster_excess` 在非掌握题上正向计算。关卡 3 已在 100 人 pilot 前锁定为后者在全部 20 题上的未加权均值不超过 0.30；旧的 DINA guess＋0.30 参照不再使用。锁定规则见 `configs/pilot_gates.frcsub.yaml`，运行后不得根据结果调整。
 
 ## 留出题目对拟合检验
 
@@ -54,6 +54,46 @@ PYTHONPATH=src python scripts/audit_run.py \
 
 合并只对组内 Q 列做逐题逻辑 OR，不改单个题目 Q 条目，不搜索替代矩阵。每个候选在同一拟合半重新估计 G-DINA，并在同一留出半计算平均逐学生对数似然、相对原矩阵的差及学生配对 bootstrap 区间，同时报告 SRMSR、名义参数量和收敛状态。该分析不自动选择“最优 Q”，也不对多个候选做事后确认性筛选；即使某候选预测更好，也必须结合内容有效性、题目对残差和重复切分，不能把统计改善直接解释为 Q 矩阵得到验证。
 
+## 重复学生切分
+
+以下命令完全离线，按学生重复划分拟合半与留出半，每次重新估计 DINA／G-DINA，并检查模型选择、SRMSR、item_008 及 item_004–item_008 残差是否 recurring：
+
+```bash
+PYTHONPATH=src python scripts/repeated_split_diagnostics.py \
+  --dataset data/processed/frcsub \
+  --output runs/frcsub_repeated_splits/repeated_splits.json \
+  --splits 20 \
+  --seed 42 \
+  --comparison-bootstraps 200 \
+  --itemfit-simulations 100000 \
+  --gdina-max-iter 300
+```
+
+`--gdina-max-iter 300` 是计算收敛设置：较低的默认上限可能让部分切分尚未收敛，未收敛结果不应直接作实质解释。每次运行仍须检查 `gdina_converged` 和迭代次数。recurrence 描述对切分的稳定性，不是把相关切分当作独立样本生成新的确认性 p 值，也不会自动删题或改换维度 B 的模型。
+
+## item_008 剔除敏感性
+
+Köhn 等的 [A Two-Step Q-Matrix Estimation Method](https://pmc.ncbi.nlm.nih.gov/articles/PMC11560062/)（2024 年在线发表，2025 年卷期）在 FrcSub 内容审查中指出，item_008 可能还依赖原八属性之外的知识，例如“任何数减去自身为零”或加法逆元性质，并建议剔除该题以降低噪声。这为**敏感性分析**提供外部内容依据，但不是看到残差后静默删题的理由。
+
+```bash
+PYTHONPATH=src python scripts/item008_sensitivity.py \
+  --dataset data/processed/frcsub \
+  --output runs/frcsub_item008_sensitivity/item008_sensitivity.json \
+  --exclude-items item_008 \
+  --splits 20 \
+  --seed 42 \
+  --itemfit-simulations 100000 \
+  --gdina-max-iter 300
+```
+
+每次切分在相同学生活动上分别拟合 full 与 reduced G-DINA。主分析始终为 `all_items_retained`；reduced 只移除完整题目列及其 Q 行，保留所有学生。由于两种分析的题目集不同，留出对数似然按每题报告，不直接用来选择题目集；SRMSR 与显著题目对数量也只是描述性敏感性诊断。即使 reduced 拟合改善，也不能据此宣称原八属性 Q 矩阵得到验证或关卡 1 自动通过。
+
+## 属性层回读与锁定关卡
+
+FrcSub 主 Q 矩阵始终为 `original_8`。模式层回读不进入正式分析；属性层只分析回读天花板至少为 0.80 的四个预定属性：`separate_whole_from_fraction`、`borrow_from_whole_part`、`subtract_numerators` 和 `reduce_to_simplest_form`。审计同时输出 `gdina_eligible_attribute_readback_agreement` 及逐属性结果，配置一致性由测试检查。
+
+关卡 3 的指标、聚合方式、题目范围、0.30 界值与长度敏感性角色均锁定在 `configs/pilot_gates.frcsub.yaml`。当前配置只锁定规则，不表示 100 人 pilot 已运行或通过。MiniMax-M3 固定温度结果只用于 smoke，不进入正式实验。
+
 ## DINA 诊断的含义
 
 - `holdout_srmsr` 比较留出真人作答的逐题 Pearson 相关与拟合 DINA 在估计掌握模式先验下的模型隐含相关；0.05 是研究计划中的暂定参考，不是普遍适用的硬阈值。
@@ -61,4 +101,4 @@ PYTHONPATH=src python scripts/audit_run.py \
 - `readback_ceiling` 对同一批指定掌握模式重复生成并回读，报告逐属性与模式层可达天花板；重复次数写入结果。
 - 能力泄漏必须与真人拟合 guess 及其拟合质量一起解释。若真人 DINA 拟合不足，单独比较泄漏率不能通过方法关卡。
 
-当前实现尚未完成外部分类准确性验证和重复切分，因此 `audit.json` 不会自动宣布 pilot 关卡通过。生成学生数很小时不运行 bootstrap 三档判定；CDM 对照与 Q 敏感性中的配对 bootstrap 只描述真人留出拟合差，不是 LLM 指标的正式推断。正式分析仍需预先规定的样本量、重复切分和置信区间方案。
+当前实现尚未完成外部分类准确性验证和 R GDINA／CDM 复核，因此 `audit.json` 不会自动宣布 pilot 关卡通过。生成学生数很小时不运行 bootstrap 三档判定；CDM 对照与 Q 敏感性中的配对 bootstrap 只描述真人留出拟合差，不是 LLM 指标的正式推断。正式分析仍需预先规定的样本量、重复切分和置信区间方案。

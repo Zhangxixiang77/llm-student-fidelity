@@ -3,7 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from student_fidelity.audit import write_audit
+import yaml
+
+from student_fidelity.audit import (
+    FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES,
+    write_audit,
+)
 from student_fidelity.data import make_synthetic_cdm_dataset
 from student_fidelity.experiment import execute_pilot
 
@@ -14,6 +19,10 @@ class AuditTests(unittest.TestCase):
             dataset = make_synthetic_cdm_dataset(
                 n_students=24, n_items=5, n_attributes=2, seed=12
             )
+            dataset.attribute_ids = [
+                "separate_whole_from_fraction",
+                "borrow_from_whole_part",
+            ]
             execute_pilot(
                 dataset,
                 directory,
@@ -48,7 +57,32 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(len(audit["item_pair_fit"]["gdina"]["item_pairs"]), 10)
             self.assertEqual(audit["item_pair_fit"]["gdina"]["n_simulated_students"], 1000)
             self.assertIsNone(audit["q_matrix_sensitivity"])
-            self.assertIn("descriptive_gate_references", audit)
+            self.assertIn(
+                "gdina_eligible_attribute_readback_agreement",
+                audit["primary_all_scored"],
+            )
+            gates = audit["descriptive_gate_references"]
+            self.assertEqual(gates["gate_3_metric"], "gdina_mean_nonmaster_excess")
+            self.assertEqual(gates["gate_3_threshold_max_0_30"], 0.30)
+            self.assertFalse(gates["gate_2_pattern_readback_enabled"])
+
+    def test_locked_gate_config_matches_audit_constants(self):
+        config_path = (
+            Path(__file__).resolve().parents[1] / "configs" / "pilot_gates.frcsub.yaml"
+        )
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        dimension_b = config["dimension_b"]
+        self.assertEqual(config["primary_q_matrix"], "original_8")
+        self.assertEqual(dimension_b["model"], "gdina")
+        self.assertFalse(dimension_b["pattern_readback_enabled"])
+        self.assertEqual(
+            tuple(dimension_b["attribute_readback"]["eligible_attributes"]),
+            FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES,
+        )
+        self.assertEqual(config["gate_3"]["metric"], "gdina_mean_nonmaster_excess")
+        self.assertEqual(config["gate_3"]["threshold_max"], 0.30)
+        self.assertEqual(config["gate_3"]["item_scope"], "all_20_items")
+        self.assertEqual(config["gate_3"]["current_status"], "locked_not_run")
 
 
 if __name__ == "__main__":

@@ -21,6 +21,13 @@ from student_fidelity.q_sensitivity import (
     q_matrix_sensitivity,
 )
 
+FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES = (
+    "separate_whole_from_fraction",
+    "borrow_from_whole_part",
+    "subtract_numerators",
+    "reduce_to_simplest_form",
+)
+
 
 def audit_run(
     dataset: ResponseDataset,
@@ -103,6 +110,22 @@ def audit_run(
                 }
             )
             result.update(gdina.response_residuals(selected, alpha))
+            eligible_indices = [
+                index
+                for index, attribute in enumerate(dataset.attribute_ids)
+                if attribute in FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES
+            ]
+            if eligible_indices:
+                eligible_agreement = (alpha == gdina_estimated)[:, eligible_indices].mean(axis=0)
+                result["gdina_eligible_attribute_readback_agreement"] = float(
+                    eligible_agreement.mean()
+                )
+                result["gdina_eligible_attribute_readback_by_attribute"] = {
+                    dataset.attribute_ids[index]: float(agreement)
+                    for index, agreement in zip(
+                        eligible_indices, eligible_agreement, strict=True
+                    )
+                }
         return result
 
     all_rows = list(range(n_students))
@@ -148,16 +171,21 @@ def audit_run(
             target_alpha, seed=seed + 4, repeats=ceiling_repeats
         )
         primary = evaluate_rows(all_rows)
-        human_guess = float(dina.guess_.mean())
         gate_references = {
             "warning": "Descriptive pilot references only; small cells cannot certify a gate.",
-            "gate_2_attribute_min_0_80": min(ceiling["attribute_readback_by_attribute"]) >= 0.80,
-            "gate_2_pattern_min_0_50": ceiling["pattern_readback_agreement"] >= 0.50,
-            "gate_3_human_mean_guess": human_guess,
-            "gate_3_threshold_human_plus_0_30": human_guess + 0.30,
-            "gate_3_observed_ability_leakage": primary["ability_leakage_rate"],
+            "gate_2_attribute_min_0_80": (
+                min(gdina_ceiling["attribute_readback_by_attribute"]) >= 0.80
+            ),
+            "gate_2_pattern_min_0_50": (
+                gdina_ceiling["pattern_readback_agreement"] >= 0.50
+            ),
+            "gate_2_eligible_attributes": list(FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES),
+            "gate_2_pattern_readback_enabled": False,
+            "gate_3_metric": "gdina_mean_nonmaster_excess",
+            "gate_3_threshold_max_0_30": 0.30,
+            "gate_3_observed_nonmaster_excess": primary["gdina_mean_nonmaster_excess"],
             "gate_3_within_descriptive_bound": (
-                primary["ability_leakage_rate"] <= human_guess + 0.30
+                primary["gdina_mean_nonmaster_excess"] <= 0.30
             ),
         }
 
