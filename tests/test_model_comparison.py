@@ -19,6 +19,8 @@ class ModelComparisonTests(unittest.TestCase):
         self.assertIn(result["provisional_dimension_b_model"], {"dina", "gdina"})
         self.assertIn("holdout_srmsr", result["dina"])
         self.assertIn("convergence", result["gdina"])
+        self.assertEqual(result["dina"]["convergence"]["n_starts"], 1)
+        self.assertEqual(len(result["dina"]["convergence"]["fit_history"]), 1)
         self.assertEqual(result["dina"]["nominal_n_parameters"], 13)
         self.assertGreaterEqual(result["gdina"]["nominal_n_parameters"], 13)
 

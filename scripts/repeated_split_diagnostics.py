@@ -20,6 +20,8 @@ def main() -> None:
     parser.add_argument("--comparison-bootstraps", type=int, default=200)
     parser.add_argument("--itemfit-simulations", type=int, default=100_000)
     parser.add_argument("--gdina-max-iter", type=int, default=300)
+    parser.add_argument("--dina-max-iter", type=int, default=300)
+    parser.add_argument("--dina-starts", type=int, default=10)
     parser.add_argument("--focus-item-id", default="item_008")
     parser.add_argument("--focus-pair", nargs=2, default=["item_004", "item_008"])
     args = parser.parse_args()
@@ -32,6 +34,8 @@ def main() -> None:
         comparison_bootstraps=args.comparison_bootstraps,
         itemfit_simulations=args.itemfit_simulations,
         gdina_max_iter=args.gdina_max_iter,
+        dina_max_iter=args.dina_max_iter,
+        dina_n_starts=args.dina_starts,
         focus_item_id=args.focus_item_id,
         focus_pair=tuple(args.focus_pair),
     )

@@ -51,6 +51,26 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(len(confidence["attribute_classification_confidence"]), 3)
         self.assertGreaterEqual(model.srmsr(dataset.responses), 0)
 
+    def test_dina_multistart_is_reproducible_and_selects_best_likelihood(self):
+        dataset = make_synthetic_cdm_dataset(
+            n_students=60, n_items=8, n_attributes=3, seed=23
+        )
+        first = DINABaseline(max_iter=30, n_starts=4, seed=17).fit(dataset)
+        second = DINABaseline(max_iter=30, n_starts=4, seed=17).fit(dataset)
+        self.assertEqual(len(first.fit_history_), 4)
+        self.assertIsNone(first.fit_history_[0]["start_seed"])
+        self.assertEqual(first.best_start_, second.best_start_)
+        self.assertAlmostEqual(
+            first.training_log_likelihood_,
+            max(start["training_log_likelihood"] for start in first.fit_history_),
+        )
+        np.testing.assert_allclose(first.slip_, second.slip_)
+        np.testing.assert_allclose(first.guess_, second.guess_)
+        np.testing.assert_allclose(first.pattern_prior_, second.pattern_prior_)
+        np.testing.assert_allclose(first.posterior_.sum(axis=1), 1)
+        with self.assertRaises(ValueError):
+            DINABaseline(n_starts=0)
+
 
 if __name__ == "__main__":
     unittest.main()

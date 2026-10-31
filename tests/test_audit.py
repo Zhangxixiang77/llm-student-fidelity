@@ -51,6 +51,9 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(audit["readback_ceiling"]["n_repeats"], 2)
             self.assertIn("holdout_srmsr", audit["dina_fit_diagnostics"])
             self.assertEqual(audit["cdm_fit_comparison"]["n_bootstrap"], 20)
+            self.assertEqual(
+                audit["cdm_fit_comparison"]["dina"]["convergence"]["n_starts"], 10
+            )
             self.assertEqual(audit["gdina_readback_ceiling"]["n_repeats"], 2)
             self.assertIn("gdina_attribute_readback_agreement", audit["primary_all_scored"])
             self.assertIn("gdina_mean_nonmaster_excess", audit["primary_all_scored"])

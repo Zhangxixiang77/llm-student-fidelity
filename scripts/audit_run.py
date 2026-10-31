@@ -15,6 +15,7 @@ def main() -> None:
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--ceiling-repeats", type=int, default=100)
     parser.add_argument("--comparison-bootstraps", type=int, default=500)
+    parser.add_argument("--dina-starts", type=int, default=10)
     parser.add_argument(
         "--itemfit-simulations",
         type=int,
@@ -29,6 +30,7 @@ def main() -> None:
         ceiling_repeats=args.ceiling_repeats,
         comparison_bootstraps=args.comparison_bootstraps,
         itemfit_simulations=args.itemfit_simulations,
+        dina_starts=args.dina_starts,
     )
     print(f"Audit written to {output}")
 

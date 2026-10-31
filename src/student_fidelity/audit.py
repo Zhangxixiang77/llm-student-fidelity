@@ -35,6 +35,7 @@ def audit_run(
     ceiling_repeats: int = 100,
     comparison_bootstraps: int = 500,
     itemfit_simulations: int | None = None,
+    dina_starts: int = 10,
 ) -> dict[str, Any]:
     """Analyze stored responses without making model calls or treating small pilots as inference."""
 
@@ -51,7 +52,7 @@ def audit_run(
     responses, target_alpha = _load_scored_responses(dataset, run_dir, scored, n_students)
     seed = int(summary["design"]["seed"])
     fitting, holdout = train_test_split(dataset, test_size=0.5, seed=seed)
-    dina = DINABaseline().fit(fitting)
+    dina = DINABaseline(n_starts=dina_starts, seed=seed + 9).fit(fitting)
     gdina = GDINABaseline().fit(fitting)
     fit_comparison = compare_cdm_fits(
         dina,
@@ -234,6 +235,7 @@ def write_audit(
     ceiling_repeats: int = 100,
     comparison_bootstraps: int = 500,
     itemfit_simulations: int | None = None,
+    dina_starts: int = 10,
 ) -> Path:
     run_dir = Path(run_dir)
     result = audit_run(
@@ -242,6 +244,7 @@ def write_audit(
         ceiling_repeats=ceiling_repeats,
         comparison_bootstraps=comparison_bootstraps,
         itemfit_simulations=itemfit_simulations,
+        dina_starts=dina_starts,
     )
     output_path = run_dir / "audit.json"
     output_path.write_text(

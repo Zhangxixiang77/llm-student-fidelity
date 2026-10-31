@@ -20,10 +20,17 @@ class RepeatedSplitTests(unittest.TestCase):
         )
         self.assertEqual(result["n_splits"], 2)
         self.assertEqual(result["gdina_max_iter"], 300)
+        self.assertEqual(result["dina_max_iter"], 300)
+        self.assertEqual(result["dina_n_starts"], 10)
         self.assertEqual(len(result["splits"]), 2)
         self.assertEqual(
             result["model_comparison_summary"]["n_gdina_converged"], 2
         )
+        self.assertIn(
+            "dina_multistart_training_log_likelihood_gain",
+            result["model_comparison_summary"],
+        )
+        self.assertEqual(result["splits"][0]["dina_n_starts"], 10)
         for statistic in ("correlation", "log_odds_ratio"):
             summary = result["focus_item_stability"][statistic]
             self.assertIn("n_splits_with_focus_item_significant", summary)
