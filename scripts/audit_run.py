@@ -15,6 +15,12 @@ def main() -> None:
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--ceiling-repeats", type=int, default=100)
     parser.add_argument("--comparison-bootstraps", type=int, default=500)
+    parser.add_argument(
+        "--itemfit-simulations",
+        type=int,
+        default=None,
+        help="Posterior-simulation size per CDM (default: max(100000, 10*N))",
+    )
     args = parser.parse_args()
     dataset = ResponseDataset.from_directory(args.dataset)
     output = write_audit(
@@ -22,6 +28,7 @@ def main() -> None:
         args.run_dir,
         ceiling_repeats=args.ceiling_repeats,
         comparison_bootstraps=args.comparison_bootstraps,
+        itemfit_simulations=args.itemfit_simulations,
     )
     print(f"Audit written to {output}")
 

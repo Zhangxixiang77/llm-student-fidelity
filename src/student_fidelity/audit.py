@@ -13,8 +13,13 @@ import numpy as np
 from student_fidelity.baselines import DINABaseline, GDINABaseline
 from student_fidelity.data import ResponseDataset, train_test_split
 from student_fidelity.experiment import _jsonable
+from student_fidelity.item_fit import item_pair_fit
 from student_fidelity.metrics import evaluate_structure, implicit_slip_guess, readback_agreement
 from student_fidelity.model_comparison import compare_cdm_fits
+from student_fidelity.q_sensitivity import (
+    FRCSUB_Q_VARIANT_SPECS,
+    q_matrix_sensitivity,
+)
 
 
 def audit_run(
@@ -22,6 +27,7 @@ def audit_run(
     run_dir: str | Path,
     ceiling_repeats: int = 100,
     comparison_bootstraps: int = 500,
+    itemfit_simulations: int | None = None,
 ) -> dict[str, Any]:
     """Analyze stored responses without making model calls or treating small pilots as inference."""
 
@@ -48,6 +54,37 @@ def audit_run(
         n_boot=comparison_bootstraps,
         seed=seed + 5,
     )
+    pair_fit = {
+        "dina": item_pair_fit(
+            dina,
+            holdout.responses,
+            item_ids=dataset.item_ids,
+            n_simulated_students=itemfit_simulations,
+            seed=seed + 6,
+        ),
+        "gdina": item_pair_fit(
+            gdina,
+            holdout.responses,
+            item_ids=dataset.item_ids,
+            n_simulated_students=itemfit_simulations,
+            seed=seed + 7,
+        ),
+    }
+    required_attributes = {
+        attribute
+        for spec in FRCSUB_Q_VARIANT_SPECS
+        for merge in spec["merges"]
+        for attribute in merge["attributes"]
+    }
+    q_sensitivity = None
+    if required_attributes.issubset(dataset.attribute_ids):
+        q_sensitivity = q_matrix_sensitivity(
+            fitting,
+            holdout,
+            n_boot=comparison_bootstraps,
+            seed=seed + 8,
+            original_model=gdina,
+        )
 
     def evaluate_rows(rows: list[int]) -> dict[str, Any]:
         selected = responses[rows]
@@ -149,11 +186,13 @@ def audit_run(
             "fitted_mean_guess": float(dina.guess_.mean()),
             "note": (
                 "Classification confidence is marginal-posterior self-consistency, "
-                "not accuracy against an external criterion. Item-pair tests and "
-                "external classification validation remain separate pilot requirements."
+                "not accuracy against an external criterion. External classification "
+                "validation and repeated splits remain separate pilot requirements."
             ),
         },
         "cdm_fit_comparison": fit_comparison,
+        "item_pair_fit": pair_fit,
+        "q_matrix_sensitivity": q_sensitivity,
         "readback_ceiling": ceiling,
         "gdina_readback_ceiling": gdina_ceiling,
         "descriptive_gate_references": gate_references,
@@ -166,6 +205,7 @@ def write_audit(
     run_dir: str | Path,
     ceiling_repeats: int = 100,
     comparison_bootstraps: int = 500,
+    itemfit_simulations: int | None = None,
 ) -> Path:
     run_dir = Path(run_dir)
     result = audit_run(
@@ -173,6 +213,7 @@ def write_audit(
         run_dir,
         ceiling_repeats=ceiling_repeats,
         comparison_bootstraps=comparison_bootstraps,
+        itemfit_simulations=itemfit_simulations,
     )
     output_path = run_dir / "audit.json"
     output_path.write_text(

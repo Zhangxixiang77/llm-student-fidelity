@@ -30,7 +30,11 @@ class AuditTests(unittest.TestCase):
                 "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
             )
             output = write_audit(
-                dataset, run_dir, ceiling_repeats=2, comparison_bootstraps=20
+                dataset,
+                run_dir,
+                ceiling_repeats=2,
+                comparison_bootstraps=20,
+                itemfit_simulations=1000,
             )
             audit = json.loads(output.read_text())
             self.assertEqual(audit["response_audit"]["scored_records"], 30)
@@ -41,6 +45,9 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(audit["gdina_readback_ceiling"]["n_repeats"], 2)
             self.assertIn("gdina_attribute_readback_agreement", audit["primary_all_scored"])
             self.assertIn("gdina_mean_nonmaster_excess", audit["primary_all_scored"])
+            self.assertEqual(len(audit["item_pair_fit"]["gdina"]["item_pairs"]), 10)
+            self.assertEqual(audit["item_pair_fit"]["gdina"]["n_simulated_students"], 1000)
+            self.assertIsNone(audit["q_matrix_sensitivity"])
             self.assertIn("descriptive_gate_references", audit)
 
 
