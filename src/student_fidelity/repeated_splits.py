@@ -22,6 +22,8 @@ def repeated_split_diagnostics(
     comparison_bootstraps: int = 200,
     itemfit_simulations: int | None = None,
     gdina_max_iter: int = 300,
+    dina_max_iter: int = 300,
+    dina_n_starts: int = 10,
     focus_item_id: str = "item_008",
     focus_pair: tuple[str, str] = ("item_004", "item_008"),
 ) -> dict[str, Any]:
@@ -33,8 +35,14 @@ def repeated_split_diagnostics(
     not turn repeated diagnostics into a new confirmatory significance test.
     """
 
-    if n_splits < 1 or comparison_bootstraps < 1 or gdina_max_iter < 1:
-        raise ValueError("split, bootstrap, and iteration counts must be positive")
+    if (
+        n_splits < 1
+        or comparison_bootstraps < 1
+        or gdina_max_iter < 1
+        or dina_max_iter < 1
+        or dina_n_starts < 1
+    ):
+        raise ValueError("split, bootstrap, iteration, and start counts must be positive")
     if focus_item_id not in dataset.item_ids:
         raise ValueError("focus_item_id is absent from the dataset")
     if len(set(focus_pair)) != 2 or not set(focus_pair).issubset(dataset.item_ids):
@@ -47,7 +55,9 @@ def repeated_split_diagnostics(
     for split_index in range(n_splits):
         split_seed = seed + split_index
         fitting, holdout = train_test_split(dataset, test_size=0.5, seed=split_seed)
-        dina = DINABaseline().fit(fitting)
+        dina = DINABaseline(
+            max_iter=dina_max_iter, n_starts=dina_n_starts, seed=split_seed + 500
+        ).fit(fitting)
         gdina = GDINABaseline(max_iter=gdina_max_iter).fit(fitting)
         comparison = compare_cdm_fits(
             dina,
@@ -88,6 +98,16 @@ def repeated_split_diagnostics(
             "gdina_holdout_srmsr": comparison["gdina"]["holdout_srmsr"],
             "gdina_converged": comparison["gdina"]["convergence"]["converged"],
             "gdina_n_iter": comparison["gdina"]["convergence"]["n_iter"],
+            "dina_converged": dina.converged_,
+            "dina_n_starts": dina.n_starts,
+            "dina_n_converged_starts": sum(
+                start["converged"] for start in dina.fit_history_
+            ),
+            "dina_best_start": dina.best_start_,
+            "dina_multistart_training_log_likelihood_gain": float(
+                dina.training_log_likelihood_
+                - dina.fit_history_[0]["training_log_likelihood"]
+            ),
         }
         for statistic in STATISTICS:
             significant = [
@@ -126,6 +146,22 @@ def repeated_split_diagnostics(
             for record in split_records
         ),
         "n_gdina_converged": sum(record["gdina_converged"] for record in split_records),
+        "n_dina_best_start_converged": sum(
+            record["dina_converged"] for record in split_records
+        ),
+        "n_dina_multistart_improved_training_likelihood": sum(
+            record["dina_multistart_training_log_likelihood_gain"] > 1e-8
+            for record in split_records
+        ),
+        "n_dina_best_start_not_deterministic": sum(
+            record["dina_best_start"] != 0 for record in split_records
+        ),
+        "dina_multistart_training_log_likelihood_gain": _distribution_summary(
+            [
+                record["dina_multistart_training_log_likelihood_gain"]
+                for record in split_records
+            ]
+        ),
         "n_gdina_srmsr_at_most_0_05": sum(
             record["gdina_holdout_srmsr"] <= 0.05 for record in split_records
         ),
@@ -184,6 +220,8 @@ def repeated_split_diagnostics(
         "comparison_bootstraps_per_split": comparison_bootstraps,
         "itemfit_simulations_per_split": itemfit_simulations,
         "gdina_max_iter": gdina_max_iter,
+        "dina_max_iter": dina_max_iter,
+        "dina_n_starts": dina_n_starts,
         "focus_item_id": focus_item_id,
         "focus_pair": list(focus_pair),
         "model_comparison_summary": model_summary,

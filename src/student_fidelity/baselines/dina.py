@@ -23,9 +23,19 @@ def _pair_correlation(
 
 
 class DINABaseline:
-    def __init__(self, max_iter: int = 100, tolerance: float = 1e-4):
+    def __init__(
+        self,
+        max_iter: int = 100,
+        tolerance: float = 1e-4,
+        n_starts: int = 1,
+        seed: int = 123456,
+    ):
+        if max_iter < 1 or tolerance <= 0 or n_starts < 1:
+            raise ValueError("iterations, tolerance, and starts must be positive")
         self.max_iter = max_iter
         self.tolerance = tolerance
+        self.n_starts = n_starts
+        self.seed = seed
 
     @staticmethod
     def enumerate_patterns(n_attributes: int) -> NDArray[np.int8]:
@@ -35,20 +45,72 @@ class DINABaseline:
         return ((integers[:, None] >> np.arange(n_attributes)) & 1).astype(np.int8)
 
     def fit(self, dataset: ResponseDataset) -> Self:
+        """Fit EM starts and retain the solution with highest training likelihood.
+
+        Start zero preserves the original deterministic initialization. Additional
+        starts randomize the pattern prior, slip, and guess; every start is audited,
+        including non-convergence, rather than silently discarded.
+        """
+
         responses = dataset.responses.astype(float)
         self.q_matrix_ = dataset.q_matrix.copy()
         self.patterns_ = self.enumerate_patterns(dataset.n_attributes)
         self.eta_ = ideal_dina_responses(self.patterns_, self.q_matrix_)
-        n_students = dataset.n_students
         n_patterns = self.patterns_.shape[0]
-        pattern_prior = np.full(n_patterns, 1 / n_patterns)
-        slip = np.full(dataset.n_items, 0.1)
-        guess = np.full(dataset.n_items, 0.1)
-        posterior = np.full((n_students, n_patterns), 1 / n_patterns)
+        best = None
+        self.fit_history_ = []
+        for start_index in range(self.n_starts):
+            start_seed = None if start_index == 0 else self.seed + start_index
+            if start_seed is None:
+                pattern_prior = np.full(n_patterns, 1 / n_patterns)
+                slip = np.full(dataset.n_items, 0.1)
+                guess = np.full(dataset.n_items, 0.1)
+            else:
+                rng = np.random.default_rng(start_seed)
+                pattern_prior = rng.dirichlet(np.ones(n_patterns))
+                slip = rng.uniform(0.05, 0.40, size=dataset.n_items)
+                guess = rng.uniform(0.05, 0.40, size=dataset.n_items)
+            candidate = self._fit_start(responses, pattern_prior, slip, guess)
+            history_record = {
+                "start_index": start_index,
+                "start_seed": start_seed,
+                "training_log_likelihood": candidate["training_log_likelihood"],
+                "n_iter": candidate["n_iter"],
+                "converged": candidate["converged"],
+            }
+            self.fit_history_.append(history_record)
+            if best is None or (
+                candidate["training_log_likelihood"] > best["training_log_likelihood"]
+            ):
+                best = {**candidate, "start_index": start_index}
 
-        for _ in range(self.max_iter):
+        assert best is not None
+        self.slip_ = best["slip"]
+        self.guess_ = best["guess"]
+        self.pattern_prior_ = best["pattern_prior"]
+        self.posterior_ = best["posterior"]
+        self.training_log_likelihood_ = best["training_log_likelihood"]
+        self.n_iter_ = best["n_iter"]
+        self.converged_ = best["converged"]
+        self.best_start_ = best["start_index"]
+        return self
+
+    def _fit_start(
+        self,
+        responses: NDArray[np.float64],
+        pattern_prior: NDArray[np.float64],
+        slip: NDArray[np.float64],
+        guess: NDArray[np.float64],
+    ) -> dict[str, object]:
+        n_students, n_items = responses.shape
+        n_patterns = self.patterns_.shape[0]
+        posterior = np.full((n_students, n_patterns), 1 / n_patterns)
+        converged = False
+        for iteration in range(1, self.max_iter + 1):
             log_likelihood = self._pattern_log_likelihood(responses, slip, guess)
-            log_posterior = log_likelihood + np.log(np.clip(pattern_prior, 1e-12, 1))[None, :]
+            log_posterior = log_likelihood + np.log(
+                np.clip(pattern_prior, 1e-12, 1)
+            )[None, :]
             posterior = np.exp(log_posterior - logsumexp(log_posterior, axis=1)[:, None])
 
             pattern_prior = np.clip(posterior.mean(axis=0), 1e-12, 1)
@@ -58,13 +120,13 @@ class DINABaseline:
             updated_slip = np.divide(
                 (expected_mastery * (1 - responses)).sum(axis=0),
                 expected_mastery.sum(axis=0),
-                out=np.zeros(dataset.n_items),
+                out=np.zeros(n_items),
                 where=expected_mastery.sum(axis=0) > 1e-10,
             )
             updated_guess = np.divide(
                 (expected_nonmastery * responses).sum(axis=0),
                 expected_nonmastery.sum(axis=0),
-                out=np.zeros(dataset.n_items),
+                out=np.zeros(n_items),
                 where=expected_nonmastery.sum(axis=0) > 1e-10,
             )
             updated_slip = np.clip(updated_slip, 1e-4, 1 - 1e-4)
@@ -75,13 +137,24 @@ class DINABaseline:
             )
             slip, guess = updated_slip, updated_guess
             if change < self.tolerance:
+                converged = True
                 break
 
-        self.slip_ = slip
-        self.guess_ = guess
-        self.pattern_prior_ = pattern_prior
-        self.posterior_ = posterior
-        return self
+        final_log_likelihood = self._pattern_log_likelihood(responses, slip, guess)
+        final_log_posterior = final_log_likelihood + np.log(
+            np.clip(pattern_prior, 1e-12, 1)
+        )[None, :]
+        final_log_marginal = logsumexp(final_log_posterior, axis=1)
+        posterior = np.exp(final_log_posterior - final_log_marginal[:, None])
+        return {
+            "slip": slip,
+            "guess": guess,
+            "pattern_prior": pattern_prior,
+            "posterior": posterior,
+            "training_log_likelihood": float(final_log_marginal.sum()),
+            "n_iter": iteration,
+            "converged": converged,
+        }
 
     def _pattern_log_likelihood(
         self, responses: NDArray[np.float64], slip: NDArray[np.float64], guess: NDArray[np.float64]

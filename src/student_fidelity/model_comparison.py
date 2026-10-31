@@ -38,6 +38,15 @@ def compare_cdm_fits(
             holdout.responses,
             dina_holdout,
             nominal_n_parameters=2 * fitting.n_items + dina.patterns_.shape[0] - 1,
+            convergence={
+                "converged": dina.converged_,
+                "n_iter": dina.n_iter_,
+                "max_iter": dina.max_iter,
+                "parameter_tolerance": dina.tolerance,
+                "n_starts": dina.n_starts,
+                "best_start": dina.best_start_,
+                "fit_history": dina.fit_history_,
+            },
         ),
         "gdina": _fit_statistics(
             gdina,
