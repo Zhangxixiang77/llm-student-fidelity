@@ -13,6 +13,7 @@
 - 属性/能力/无人设，逐题无状态/有状态作答，题目位置循环拉丁方平衡；
 - 属性与模式回读、DINA／G-DINA 可达天花板、合格属性限定分析、隐含 slip/guess 与能力泄漏率；
 - 留出题目对相关／log-OR 检验、Holm 校正、稀疏单元格诊断和固定 Q 矩阵敏感性；
+- DINA 可复现多组随机初值、按训练边际对数似然选优及逐初值收敛审计；
 - 重复学生切分诊断，以及有文献依据、但不改变主分析题目集的 item_008 剔除敏感性；
 - 在 100 人 pilot 前锁定的 G-DINA 关卡配置 `configs/pilot_gates.frcsub.yaml`；
 - 离线 DINA mock 和可选 OpenAI-compatible 接口；原始输出逐条保存为 JSONL；
@@ -73,11 +74,11 @@ MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-
 
 每次 `pilot` 只运行一个“人设 × 状态 × 解码 × 模型”单元。完整设计需要由外层实验清单重复运行，并使用不同输出目录；不要在正式生成后修改预先锁定的关卡阈值。
 
-完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA／G-DINA 同切分对照、SRMSR、逐属性后验分类置信度、留出对数似然差的配对 bootstrap 区间、题目对 Holm 检验、固定 Q 矩阵聚合敏感性、重复回读天花板和描述性关卡参照。另有独立命令执行重复切分与 item_008 剔除敏感性；真实输出均保留在本地。小样本审计不会自动给出正式推断或关卡通过结论。
+完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA／G-DINA 同切分对照、SRMSR、逐属性后验分类置信度、留出对数似然差的配对 bootstrap 区间、题目对 Holm 检验、固定 Q 矩阵聚合敏感性、重复回读天花板和描述性关卡参照。另有独立命令执行重复切分与 item_008 剔除敏感性；真实输出均保留在本地。DINA 审计默认使用 10 组初值，重复切分可用 `--dina-starts` 和 `--dina-max-iter` 显式控制。小样本审计不会自动给出正式推断或关卡通过结论。
 
 ## 方法边界
 
-- Python 中的 DINA EM、logit-link G-DINA EM 与 2PL MML 是透明、可测试的轻量基线实现；G-DINA 使用弱 ridge 保证数值稳定，并记录收敛状态。SRMSR、题目对检验与配对 bootstrap 支持单次及重复切分的 pilot 诊断；recurrence 只表示切分稳定性，不是新的确认性 p 值。正式论文仍需用 R 的 GDINA/CDM 复核参数、拟合和分类准确性，并对 DINA 使用多组随机初值；当前环境尚未完成这些复核。本仓库尚未实现混合效应 logistic 回归。
+- Python 中的 DINA EM、logit-link G-DINA EM 与 2PL MML 是透明、可测试的轻量基线实现；G-DINA 使用弱 ridge 保证数值稳定，并记录收敛状态。SRMSR、题目对检验与配对 bootstrap 支持单次及重复切分的 pilot 诊断；recurrence 只表示切分稳定性，不是新的确认性 p 值。DINA 已支持确定性初值加可复现随机初值，并保留全部初值的训练似然与收敛记录。正式论文仍需用 R 的 GDINA/CDM 复核参数、拟合和分类准确性；`scripts/r_cdm_crosscheck.R` 提供了 GDINA 包对照路径，但当前环境没有 R，该脚本尚未执行，不能视为已完成复核。本仓库尚未实现混合效应 logistic 回归。
 - 四分相关使用 0.5 连续性校正的成对最大似然估计，并限制在 ±0.95，适合小样本试点；正式分析需固定平滑规则并做敏感性分析。
 - `noise_delta_95` 只是等效判定的一部分。正式“三档判定”还需要预先规定的 bootstrap CI、重复切分和多重比较方案，不能只看一个点估计。
 - CDM 指标只作辅证，避免用 CDM 指标循环证明 CDM 生成基线优越。
