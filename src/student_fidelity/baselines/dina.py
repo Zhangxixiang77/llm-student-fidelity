@@ -104,6 +104,18 @@ class DINABaseline:
         log_posterior = log_likelihood + np.log(np.clip(self.pattern_prior_, 1e-12, 1))[None, :]
         return np.exp(log_posterior - logsumexp(log_posterior, axis=1)[:, None])
 
+    def log_likelihood_by_student(
+        self, responses: NDArray[np.int8]
+    ) -> NDArray[np.float64]:
+        """Held-out marginal log likelihood for each student under the fitted prior."""
+
+        self._check_fitted()
+        log_likelihood = self._pattern_log_likelihood(
+            np.asarray(responses, dtype=float), self.slip_, self.guess_
+        )
+        log_posterior = log_likelihood + np.log(np.clip(self.pattern_prior_, 1e-12, 1))[None, :]
+        return logsumexp(log_posterior, axis=1)
+
     def map_patterns(self, responses: NDArray[np.int8]) -> NDArray[np.int8]:
         posterior = self.posterior_patterns(responses)
         return self.patterns_[posterior.argmax(axis=1)]
@@ -131,7 +143,7 @@ class DINABaseline:
     def classification_confidence(
         self, responses: NDArray[np.int8]
     ) -> dict[str, object]:
-        """Posterior MAP classification confidence by attribute, not external criterion validity."""
+        """Marginal posterior classification confidence, not external criterion validity."""
 
         posterior = self.posterior_patterns(responses)
         mastery_probability = posterior @ self.patterns_

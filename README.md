@@ -7,7 +7,7 @@
 这是一个可运行的 FrcSub pilot 方法骨架，不是正式实验结果。首版包含：
 
 - 统一的学生 × 题目二元作答与 Q 矩阵接口，严格按学生切分拟合半/留出半；
-- 独立 Bernoulli、高斯 copula、2PL IRT、DINA 四类生成基线；
+- 独立 Bernoulli、高斯 copula、2PL IRT、DINA、logit-link G-DINA 五类生成基线；
 - 题目通过率相关/RMSE、总分 Wasserstein 距离、四分相关矩阵 RMSE、完整作答模式 TV 距离；
 - 真人 split-half 噪声分布与 95% 界值、生成条件 bootstrap CI 函数；
 - 属性/能力/无人设，逐题无状态/有状态作答，题目位置循环拉丁方平衡；
@@ -70,11 +70,11 @@ MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-
 
 每次 `pilot` 只运行一个“人设 × 状态 × 解码 × 模型”单元。完整设计需要由外层实验清单重复运行，并使用不同输出目录；不要在正式生成后修改预先锁定的关卡阈值。
 
-完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA SRMSR、逐属性后验分类置信度、重复回读天花板和描述性关卡参照。小样本审计不会自动给出 bootstrap 或关卡通过结论。
+完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA／G-DINA 同切分对照、SRMSR、逐属性后验分类置信度、留出对数似然差的配对 bootstrap 区间、重复回读天花板和描述性关卡参照。小样本审计不会自动给出正式推断或关卡通过结论。
 
 ## 方法边界
 
-- Python 中的 DINA EM 与 2PL MML 是透明、可测试的轻量基线实现，SRMSR 目前仅用于轻量拟合诊断。正式论文应用 R 的 GDINA/CDM 复核参数、拟合和分类准确性；本仓库尚未实现 G-DINA、题目对检验或混合效应 logistic 回归。
+- Python 中的 DINA EM、logit-link G-DINA EM 与 2PL MML 是透明、可测试的轻量基线实现；G-DINA 使用弱 ridge 保证数值稳定，并记录收敛状态。SRMSR 与配对 bootstrap 目前仅用于单次切分的 pilot 诊断。正式论文应用 R 的 GDINA/CDM 复核参数、拟合和分类准确性；本仓库尚未实现题目对检验或混合效应 logistic 回归。
 - 四分相关使用 0.5 连续性校正的成对最大似然估计，并限制在 ±0.95，适合小样本试点；正式分析需固定平滑规则并做敏感性分析。
 - `noise_delta_95` 只是等效判定的一部分。正式“三档判定”还需要预先规定的 bootstrap CI、重复切分和多重比较方案，不能只看一个点估计。
 - CDM 指标只作辅证，避免用 CDM 指标循环证明 CDM 生成基线优越。
@@ -89,8 +89,9 @@ src/student_fidelity/
 ├── data.py                  # 数据校验、切分、合成 smoke-test 数据
 ├── tetrachoric.py           # 四分相关及最近 PSD 投影
 ├── metrics.py               # 保真度、噪声与可控性指标
-├── baselines/               # Bernoulli / copula / 2PL / DINA
+├── baselines/               # Bernoulli / copula / 2PL / DINA / G-DINA
 ├── simulation/              # 人设、模型接口、逐题运行器
+├── model_comparison.py      # 同切分 CDM 留出拟合对照
 ├── experiment.py            # 单个 pilot 单元编排
 └── cli.py
 ```

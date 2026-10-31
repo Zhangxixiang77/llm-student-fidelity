@@ -1,4 +1,4 @@
-"""Offline pilot audit: truncation sensitivity and DINA gate diagnostics."""
+"""Offline pilot audit: truncation sensitivity and CDM gate diagnostics."""
 
 from __future__ import annotations
 
@@ -10,16 +10,18 @@ from typing import Any
 
 import numpy as np
 
-from student_fidelity.baselines import DINABaseline
+from student_fidelity.baselines import DINABaseline, GDINABaseline
 from student_fidelity.data import ResponseDataset, train_test_split
 from student_fidelity.experiment import _jsonable
 from student_fidelity.metrics import evaluate_structure, implicit_slip_guess, readback_agreement
+from student_fidelity.model_comparison import compare_cdm_fits
 
 
 def audit_run(
     dataset: ResponseDataset,
     run_dir: str | Path,
     ceiling_repeats: int = 100,
+    comparison_bootstraps: int = 500,
 ) -> dict[str, Any]:
     """Analyze stored responses without making model calls or treating small pilots as inference."""
 
@@ -37,6 +39,15 @@ def audit_run(
     seed = int(summary["design"]["seed"])
     fitting, holdout = train_test_split(dataset, test_size=0.5, seed=seed)
     dina = DINABaseline().fit(fitting)
+    gdina = GDINABaseline().fit(fitting)
+    fit_comparison = compare_cdm_fits(
+        dina,
+        gdina,
+        fitting,
+        holdout,
+        n_boot=comparison_bootstraps,
+        seed=seed + 5,
+    )
 
     def evaluate_rows(rows: list[int]) -> dict[str, Any]:
         selected = responses[rows]
@@ -46,6 +57,15 @@ def audit_run(
             estimated = dina.map_patterns(selected)
             result.update(readback_agreement(alpha, estimated))
             result.update(implicit_slip_guess(selected, alpha, dataset.q_matrix))
+            gdina_estimated = gdina.map_patterns(selected)
+            gdina_readback = readback_agreement(alpha, gdina_estimated)
+            result.update(
+                {
+                    f"gdina_{key}": value
+                    for key, value in gdina_readback.items()
+                }
+            )
+            result.update(gdina.response_residuals(selected, alpha))
         return result
 
     all_rows = list(range(n_students))
@@ -81,9 +101,13 @@ def audit_run(
         for record in scored
     )
     ceiling = None
+    gdina_ceiling = None
     gate_references = None
     if summary["design"]["persona"] == "attribute":
         ceiling = dina.readback_ceiling(
+            target_alpha, seed=seed + 4, repeats=ceiling_repeats
+        )
+        gdina_ceiling = gdina.readback_ceiling(
             target_alpha, seed=seed + 4, repeats=ceiling_repeats
         )
         primary = evaluate_rows(all_rows)
@@ -124,11 +148,14 @@ def audit_run(
             "fitted_mean_slip": float(dina.slip_.mean()),
             "fitted_mean_guess": float(dina.guess_.mean()),
             "note": (
-                "Classification confidence is posterior MAP self-consistency, not accuracy against "
-                "an external criterion. G-DINA comparison remains a separate pilot requirement."
+                "Classification confidence is marginal-posterior self-consistency, "
+                "not accuracy against an external criterion. Item-pair tests and "
+                "external classification validation remain separate pilot requirements."
             ),
         },
+        "cdm_fit_comparison": fit_comparison,
         "readback_ceiling": ceiling,
+        "gdina_readback_ceiling": gdina_ceiling,
         "descriptive_gate_references": gate_references,
     }
     return _jsonable(result)
@@ -138,9 +165,15 @@ def write_audit(
     dataset: ResponseDataset,
     run_dir: str | Path,
     ceiling_repeats: int = 100,
+    comparison_bootstraps: int = 500,
 ) -> Path:
     run_dir = Path(run_dir)
-    result = audit_run(dataset, run_dir, ceiling_repeats=ceiling_repeats)
+    result = audit_run(
+        dataset,
+        run_dir,
+        ceiling_repeats=ceiling_repeats,
+        comparison_bootstraps=comparison_bootstraps,
+    )
     output_path = run_dir / "audit.json"
     output_path.write_text(
         json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n",

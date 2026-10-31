@@ -14,9 +14,15 @@ def main() -> None:
     parser.add_argument("--dataset", required=True, type=Path)
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--ceiling-repeats", type=int, default=100)
+    parser.add_argument("--comparison-bootstraps", type=int, default=500)
     args = parser.parse_args()
     dataset = ResponseDataset.from_directory(args.dataset)
-    output = write_audit(dataset, args.run_dir, ceiling_repeats=args.ceiling_repeats)
+    output = write_audit(
+        dataset,
+        args.run_dir,
+        ceiling_repeats=args.ceiling_repeats,
+        comparison_bootstraps=args.comparison_bootstraps,
+    )
     print(f"Audit written to {output}")
 
 
