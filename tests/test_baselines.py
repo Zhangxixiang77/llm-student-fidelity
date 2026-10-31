@@ -35,10 +35,21 @@ class BaselineTests(unittest.TestCase):
         alpha = model.sample_patterns(10, seed=1)
         generated = model.sample(10, seed=2, alpha=alpha)
         self.assertEqual(generated.shape, (10, 8))
+        ceiling = model.readback_ceiling(alpha, repeats=3)
         self.assertEqual(
-            set(model.readback_ceiling(alpha)),
-            {"attribute_readback_agreement", "pattern_readback_agreement"},
+            set(ceiling),
+            {
+                "attribute_readback_agreement",
+                "pattern_readback_agreement",
+                "attribute_readback_by_attribute",
+                "n_repeats",
+            },
         )
+        self.assertEqual(len(ceiling["attribute_readback_by_attribute"]), 3)
+        self.assertEqual(ceiling["n_repeats"], 3)
+        confidence = model.classification_confidence(dataset.responses)
+        self.assertEqual(len(confidence["attribute_classification_confidence"]), 3)
+        self.assertGreaterEqual(model.srmsr(dataset.responses), 0)
 
 
 if __name__ == "__main__":

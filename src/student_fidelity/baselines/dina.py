@@ -9,7 +9,17 @@ from numpy.typing import NDArray
 from scipy.special import logsumexp
 
 from student_fidelity.data import ResponseDataset
-from student_fidelity.metrics import ideal_dina_responses, readback_agreement
+from student_fidelity.metrics import ideal_dina_responses
+
+
+def _pair_correlation(
+    item_probability: NDArray[np.float64], joint_probability: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    variance = item_probability * (1 - item_probability)
+    denominator = np.sqrt(variance[:, None] * variance[None, :])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        residual = joint_probability - item_probability[:, None] * item_probability[None, :]
+        return residual / denominator
 
 
 class DINABaseline:
@@ -118,14 +128,60 @@ class DINABaseline:
         rng = np.random.default_rng(seed + 1)
         return rng.binomial(1, p_correct).astype(np.int8)
 
-    def readback_ceiling(
-        self, alpha: NDArray[np.int8], seed: int = 42
-    ) -> dict[str, float]:
-        """Generate under fitted human randomness, then diagnose the same assigned patterns."""
+    def classification_confidence(
+        self, responses: NDArray[np.int8]
+    ) -> dict[str, object]:
+        """Posterior MAP classification confidence by attribute, not external criterion validity."""
 
-        responses = self.sample(alpha.shape[0], seed=seed, alpha=alpha)
-        estimated = self.map_patterns(responses)
-        return readback_agreement(alpha, estimated)
+        posterior = self.posterior_patterns(responses)
+        mastery_probability = posterior @ self.patterns_
+        confidence = np.maximum(mastery_probability, 1 - mastery_probability).mean(axis=0)
+        return {
+            "attribute_classification_confidence": confidence.tolist(),
+            "mean_classification_confidence": float(confidence.mean()),
+        }
+
+    def srmsr(self, responses: NDArray[np.int8]) -> float:
+        """SRMSR for observed and DINA-predicted item correlations."""
+
+        responses = np.asarray(responses, dtype=float)
+        eta = self.eta_.astype(bool)
+        p_correct = np.where(eta, 1 - self.slip_[None, :], self.guess_[None, :])
+        predicted_p = self.pattern_prior_ @ p_correct
+        predicted_p11 = np.einsum(
+            "p,pi,pj->ij", self.pattern_prior_, p_correct, p_correct, optimize=True
+        )
+        observed_p = responses.mean(axis=0)
+        observed_p11 = np.einsum("ni,nj->nij", responses, responses).mean(axis=0)
+        upper = np.triu_indices(responses.shape[1], k=1)
+        observed_correlation = _pair_correlation(observed_p, observed_p11)[upper]
+        predicted_correlation = _pair_correlation(predicted_p, predicted_p11)[upper]
+        residual = observed_correlation - predicted_correlation
+        if not np.isfinite(residual).all():
+            raise ValueError("SRMSR is undefined for zero-variance items")
+        return float(np.sqrt(np.mean(residual**2)))
+
+    def readback_ceiling(
+        self, alpha: NDArray[np.int8], seed: int = 42, repeats: int = 1
+    ) -> dict[str, object]:
+        """Repeatedly generate and diagnose assigned patterns under fitted human randomness."""
+
+        if repeats < 1:
+            raise ValueError("repeats must be positive")
+        agreements = []
+        pattern_agreements = []
+        for repeat in range(repeats):
+            responses = self.sample(alpha.shape[0], seed=seed + 2 * repeat, alpha=alpha)
+            estimated = self.map_patterns(responses)
+            agreements.append((alpha == estimated).mean(axis=0))
+            pattern_agreements.append(np.all(alpha == estimated, axis=1).mean())
+        attribute_agreement = np.asarray(agreements).mean(axis=0)
+        return {
+            "attribute_readback_agreement": float(attribute_agreement.mean()),
+            "pattern_readback_agreement": float(np.mean(pattern_agreements)),
+            "attribute_readback_by_attribute": attribute_agreement.tolist(),
+            "n_repeats": repeats,
+        }
 
     def _check_fitted(self) -> None:
         if not hasattr(self, "pattern_prior_"):

@@ -70,9 +70,11 @@ MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-
 
 每次 `pilot` 只运行一个“人设 × 状态 × 解码 × 模型”单元。完整设计需要由外层实验清单重复运行，并使用不同输出目录；不要在正式生成后修改预先锁定的关卡阈值。
 
+完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA SRMSR、逐属性后验分类置信度、重复回读天花板和描述性关卡参照。小样本审计不会自动给出 bootstrap 或关卡通过结论。
+
 ## 方法边界
 
-- Python 中的 DINA EM 与 2PL MML 是透明、可测试的轻量基线实现。正式论文应用 R 的 GDINA/CDM 复核参数、拟合和分类准确性；本仓库尚未实现 G-DINA、SRMSR、题目对检验或混合效应 logistic 回归。
+- Python 中的 DINA EM 与 2PL MML 是透明、可测试的轻量基线实现，SRMSR 目前仅用于轻量拟合诊断。正式论文应用 R 的 GDINA/CDM 复核参数、拟合和分类准确性；本仓库尚未实现 G-DINA、题目对检验或混合效应 logistic 回归。
 - 四分相关使用 0.5 连续性校正的成对最大似然估计，并限制在 ±0.95，适合小样本试点；正式分析需固定平滑规则并做敏感性分析。
 - `noise_delta_95` 只是等效判定的一部分。正式“三档判定”还需要预先规定的 bootstrap CI、重复切分和多重比较方案，不能只看一个点估计。
 - CDM 指标只作辅证，避免用 CDM 指标循环证明 CDM 生成基线优越。
