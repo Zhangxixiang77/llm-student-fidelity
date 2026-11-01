@@ -16,6 +16,9 @@ from student_fidelity.simulation.personas import Persona
 from student_fidelity.simulation.simulators import Item, OpenAICompatibleSimulator
 
 
+REQUEST_WORKERS = 8
+
+
 def load_locked_design(path: str | Path) -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as source:
         config = yaml.safe_load(source)
@@ -208,6 +211,7 @@ def run_locked_pilot(config_path: str | Path, execute: bool = False) -> dict[str
         "global_max_calls": config["global_max_calls"],
         "attempts_before_run": total_attempts(root, config),
         "cells": [cell["id"] for cell in config["cells"]],
+        "request_workers": REQUEST_WORKERS,
         "executed": execute,
     }
     if not execute:
@@ -255,6 +259,7 @@ def run_locked_pilot(config_path: str | Path, execute: bool = False) -> dict[str
             prompt_strategy=cell["prompt_strategy"],
             dina_n_starts=config["dina_n_starts"],
             dina_max_iter=config["dina_max_iter"],
+            max_workers=REQUEST_WORKERS,
         )
 
     plan["attempts_after_run"] = total_attempts(root, config)

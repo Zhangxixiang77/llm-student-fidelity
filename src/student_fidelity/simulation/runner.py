@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -81,6 +83,7 @@ def run_simulation(
     seed: int = 42,
     resume: bool = False,
     max_calls: int | None = None,
+    max_workers: int = 1,
 ) -> NDArray[np.int8]:
     if state not in {"stateless", "stateful"}:
         raise ValueError("state must be stateless or stateful")
@@ -90,6 +93,8 @@ def run_simulation(
         raise ValueError("temperature must be between zero and two")
     if max_calls is not None and max_calls < 1:
         raise ValueError("max_calls must be positive")
+    if max_workers < 1:
+        raise ValueError("max_workers must be positive")
 
     n_students = len(personas)
     responses = np.full((n_students, dataset.n_items), -1, dtype=np.int8)
@@ -114,10 +119,14 @@ def run_simulation(
             completed.add(key)
             responses[student_index, item_index] = int(record["is_correct"])
     attempts = len(existing_records)
+    lock = threading.Lock()
+    stop_event = threading.Event()
     with output_path.open("w", encoding="utf-8") as output:
         for record in existing_records:
             output.write(json.dumps(record, ensure_ascii=False) + "\n")
-        for student_index, persona in enumerate(personas):
+
+        def run_student(student_index: int, persona: Persona) -> None:
+            nonlocal attempts
             history: list[dict[str, Any]] = []
             if state == "stateful":
                 previous = [
@@ -138,6 +147,8 @@ def run_simulation(
             for position, item_index in enumerate(order):
                 if (student_index, int(item_index)) in completed:
                     continue
+                if stop_event.is_set():
+                    return
                 text = (
                     dataset.item_texts[item_index]
                     if dataset.item_texts
@@ -151,11 +162,15 @@ def run_simulation(
                     q_vector=dataset.q_matrix[item_index],
                     index=int(item_index),
                 )
-                if max_calls is not None and attempts >= max_calls:
-                    raise RuntimeError(
-                        f"call budget exhausted ({max_calls}); resume only after explicit review"
-                    )
-                attempts += 1
+                with lock:
+                    if stop_event.is_set():
+                        return
+                    if max_calls is not None and attempts >= max_calls:
+                        stop_event.set()
+                        raise RuntimeError(
+                            f"call budget exhausted ({max_calls}); resume only after explicit review"
+                        )
+                    attempts += 1
                 try:
                     answer = simulator.answer(persona, item, history, temperature)
                 except Exception as error:
@@ -173,13 +188,14 @@ def run_simulation(
                         "raw_response": getattr(error, "raw_response", None),
                         "response_metadata": getattr(error, "response_metadata", {}),
                     }
-                    output.write(json.dumps(failure, ensure_ascii=False) + "\n")
-                    output.flush()
+                    with lock:
+                        output.write(json.dumps(failure, ensure_ascii=False) + "\n")
+                        output.flush()
+                        stop_event.set()
                     raise
                 correct = answer.is_correct
                 if correct is None:
                     correct = answers_equivalent(answer.final_answer, answer_key)
-                responses[student_index, item_index] = int(correct)
                 record = {
                     "student_id": f"virtual_{student_index + 1:04d}",
                     "item_id": item.item_id,
@@ -195,16 +211,36 @@ def run_simulation(
                     "raw_response": answer.raw_response,
                     "response_metadata": answer.response_metadata,
                 }
-                output.write(json.dumps(record, ensure_ascii=False) + "\n")
-                if state == "stateful":
-                    history.append(
-                        {
-                            "item_id": item.item_id,
-                            "question": item.text,
-                            "final_answer": answer.final_answer,
-                            "work": answer.work,
-                        }
-                    )
+                with lock:
+                    responses[student_index, item_index] = int(correct)
+                    output.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    output.flush()
+                    if state == "stateful":
+                        history.append(
+                            {
+                                "item_id": item.item_id,
+                                "question": item.text,
+                                "final_answer": answer.final_answer,
+                                "work": answer.work,
+                            }
+                        )
+
+        if max_workers == 1:
+            for student_index, persona in enumerate(personas):
+                run_student(student_index, persona)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(run_student, student_index, persona)
+                    for student_index, persona in enumerate(personas)
+                ]
+                try:
+                    for future in as_completed(futures):
+                        future.result()
+                finally:
+                    if stop_event.is_set():
+                        for future in futures:
+                            future.cancel()
     if (responses < 0).any():
         raise RuntimeError("simulation ended with unscored responses")
     return responses

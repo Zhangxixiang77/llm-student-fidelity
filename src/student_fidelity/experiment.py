@@ -45,6 +45,7 @@ def execute_pilot(
     prompt_strategy: str = "answer_first",
     dina_n_starts: int = 10,
     dina_max_iter: int = 100,
+    max_workers: int = 1,
 ) -> dict[str, Any]:
     """Run one experimental cell; callers must repeat cells/seeds for the full design."""
 
@@ -141,6 +142,7 @@ def execute_pilot(
         seed=seed,
         resume=resume,
         max_calls=max_calls,
+        max_workers=max_workers,
     )
     np.savetxt(output_dir / "assigned_alpha.csv", target_alpha, fmt="%d", delimiter=",")
 
@@ -207,6 +209,7 @@ def execute_pilot(
             "noise_repeats": noise_repeats,
             "seed": seed,
             "max_calls": max_calls,
+            "request_workers": max_workers,
         },
         "configuration_sha256": configuration_sha256,
         "simulator": simulator.metadata(),

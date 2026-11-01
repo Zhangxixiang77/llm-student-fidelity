@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -14,10 +15,15 @@ from student_fidelity.simulation import (
     run_simulation,
 )
 from student_fidelity.simulation.personas import Persona
-from student_fidelity.simulation.runner import answers_equivalent, parse_rational_answer
+from student_fidelity.simulation.runner import (
+    answers_equivalent,
+    latin_square_item_order,
+    parse_rational_answer,
+)
 from student_fidelity.simulation.simulators import (
     Item,
     OpenAICompatibleSimulator,
+    SimulationAnswer,
     parse_structured_answer,
 )
 
@@ -106,6 +112,94 @@ class SimulationTests(unittest.TestCase):
                     max_calls=1,
                 )
             self.assertEqual(len(output.read_text().splitlines()), 1)
+
+    def test_parallel_students_preserve_item_order_and_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = make_synthetic_cdm_dataset(
+                n_students=20, n_items=6, n_attributes=3, seed=10
+            )
+            _, holdout = train_test_split(dataset, seed=2)
+            personas = [Persona(kind="none") for _ in range(4)]
+            output = Path(directory) / "raw.jsonl"
+
+            class RecordingSimulator:
+                def __init__(self):
+                    self.calls = []
+                    self.lock = threading.Lock()
+
+                def answer(self, persona, item, history, temperature):
+                    with self.lock:
+                        self.calls.append((id(persona), item.item_id))
+                    return SimulationAnswer(item.answer_key, "", "parallel-mock")
+
+            simulator = RecordingSimulator()
+            responses = run_simulation(
+                holdout, simulator, personas, output, max_workers=3, seed=42
+            )
+            self.assertEqual(responses.shape, (4, 6))
+            records = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(len(records), 24)
+            self.assertEqual(
+                len({(r["student_id"], r["item_id"]) for r in records}), 24
+            )
+            for index, persona in enumerate(personas):
+                observed = [
+                    item_id for persona_id, item_id in simulator.calls if persona_id == id(persona)
+                ]
+                expected = [
+                    holdout.item_ids[item]
+                    for item in latin_square_item_order(holdout.n_items, index, 42)
+                ]
+                self.assertEqual(observed, expected)
+
+            class FailIfCalled:
+                def answer(self, *args):
+                    raise AssertionError("completed responses should not be requested again")
+
+            resumed = run_simulation(
+                holdout, FailIfCalled(), personas, output, resume=True, max_workers=3
+            )
+            np.testing.assert_array_equal(resumed, responses)
+            self.assertEqual(len(output.read_text().splitlines()), 24)
+
+    def test_parallel_budget_never_exceeds_cumulative_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = make_synthetic_cdm_dataset(
+                n_students=20, n_items=4, n_attributes=2, seed=10
+            )
+            _, holdout = train_test_split(dataset, seed=2)
+            personas = [Persona(kind="none") for _ in range(3)]
+            output = Path(directory) / "raw.jsonl"
+
+            class ImmediateSimulator:
+                def answer(self, persona, item, history, temperature):
+                    return SimulationAnswer(item.answer_key, "", "parallel-mock")
+
+            with self.assertRaisesRegex(RuntimeError, "call budget exhausted"):
+                run_simulation(
+                    holdout,
+                    ImmediateSimulator(),
+                    personas,
+                    output,
+                    max_calls=5,
+                    max_workers=3,
+                )
+            records = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(len(records), 5)
+            self.assertEqual(
+                len({(r["student_id"], r["item_id"]) for r in records}), 5
+            )
+            with self.assertRaisesRegex(RuntimeError, "call budget exhausted"):
+                run_simulation(
+                    holdout,
+                    ImmediateSimulator(),
+                    personas,
+                    output,
+                    resume=True,
+                    max_calls=5,
+                    max_workers=3,
+                )
+            self.assertEqual(len(output.read_text().splitlines()), 5)
 
     def test_answer_parser_accepts_code_fence(self):
         final, work = parse_structured_answer(
