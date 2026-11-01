@@ -3,7 +3,8 @@
 The statistics follow GDINA::itemfit (Chen, de la Torre, & Zhang, 2013):
 Fisher-z correlation residuals and log-odds-ratio residuals, with Holm
 adjustment at test and item level. This is an independent lightweight
-implementation; formal analyses should still be cross-checked with R GDINA.
+implementation; simulation-based calibration and optional external cross-checks
+are documented in docs/estimator_validation.md.
 """
 
 from __future__ import annotations
