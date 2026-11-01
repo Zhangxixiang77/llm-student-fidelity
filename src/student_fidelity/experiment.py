@@ -147,6 +147,23 @@ def execute_pilot(
             fixed_temperature=simulator_config.get("fixed_temperature"),
             prompt_strategy=prompt_strategy,
         )
+    elif simulator_type == "huggingface_local":
+        from student_fidelity.simulation.huggingface import HuggingFaceLocalSimulator
+
+        simulator = HuggingFaceLocalSimulator(
+            model=simulator_config["model"],
+            revision=simulator_config["revision"],
+            cache_dir=simulator_config.get("cache_dir"),
+            device=simulator_config.get("device", "auto"),
+            dtype=simulator_config.get("dtype", "auto"),
+            max_new_tokens=int(simulator_config.get("max_new_tokens", 1024)),
+            local_files_only=bool(simulator_config.get("local_files_only", True)),
+            trust_remote_code=bool(simulator_config.get("trust_remote_code", False)),
+            chat_template_kwargs=simulator_config.get("chat_template_kwargs"),
+            prompt_strategy=prompt_strategy,
+            top_p=float(simulator_config.get("top_p", 1.0)),
+            seed=seed + 20,
+        )
     else:
         raise ValueError(f"unsupported simulator type: {simulator_type}")
 

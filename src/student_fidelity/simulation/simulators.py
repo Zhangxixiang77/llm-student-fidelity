@@ -89,6 +89,38 @@ class DINAMockSimulator(StudentSimulator):
         return {"type": "dina_mock", "network_access": False}
 
 
+def build_student_prompt(
+    persona: Persona,
+    item: Item,
+    history: list[dict[str, Any]],
+    prompt_strategy: Literal["answer_first", "error_examples"],
+) -> str:
+    """Build the same student prompt for hosted and local model backends."""
+
+    history_text = json.dumps(history, ensure_ascii=False) if history else "No previous answers."
+    error_instruction = ""
+    if prompt_strategy == "error_examples":
+        error_instruction = """
+Use these only as examples of mistakes a student can make, not as a demand to err:
+adding numerators and denominators directly, or failing to regroup when subtracting
+a fraction from a whole number. If such a mistake follows from this student's profile,
+reproduce it; otherwise respond as this student would.
+"""
+    return f"""{persona.render()}
+
+Answer as this student, not as an assistant trying to maximize accuracy.
+{error_instruction}
+Give the final answer first, then optionally show brief work. Return only JSON:
+{{"final_answer": "...", "work": "..."}}
+
+Previous answers by this student:
+{history_text}
+
+Current question ({item.item_id}):
+{item.text}
+"""
+
+
 class OpenAICompatibleSimulator(StudentSimulator):
     """Call a chat-completions endpoint without adding a provider-specific SDK."""
 
@@ -126,30 +158,7 @@ class OpenAICompatibleSimulator(StudentSimulator):
         api_key = os.environ.get(self.api_key_env)
         if not api_key:
             raise RuntimeError(f"set {self.api_key_env} before running a real model")
-        history_text = (
-            json.dumps(history, ensure_ascii=False) if history else "No previous answers."
-        )
-        error_instruction = ""
-        if self.prompt_strategy == "error_examples":
-            error_instruction = """
-Use these only as examples of mistakes a student can make, not as a demand to err:
-adding numerators and denominators directly, or failing to regroup when subtracting
-a fraction from a whole number. If such a mistake follows from this student's profile,
-reproduce it; otherwise respond as this student would.
-"""
-        prompt = f"""{persona.render()}
-
-Answer as this student, not as an assistant trying to maximize accuracy.
-{error_instruction}
-Give the final answer first, then optionally show brief work. Return only JSON:
-{{"final_answer": "...", "work": "..."}}
-
-Previous answers by this student:
-{history_text}
-
-Current question ({item.item_id}):
-{item.text}
-"""
+        prompt = build_student_prompt(persona, item, history, self.prompt_strategy)
         if not self.temperature_supported:
             if self.fixed_temperature is None:
                 raise ValueError("fixed_temperature is required when temperature is unsupported")

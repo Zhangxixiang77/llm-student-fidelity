@@ -14,7 +14,8 @@ dist/
 !.env.example
 *.pem
 
-# Data and generated experiments
+# Data, model caches, and generated experiments
+.cache/
 data/raw/
 data/processed/
 runs/

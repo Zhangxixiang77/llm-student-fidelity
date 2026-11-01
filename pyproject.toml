@@ -19,6 +19,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 data = ["rdata>=1.1"]
+hf = [
+  "torch>=2.4",
+  "transformers>=4.51",
+  "huggingface_hub>=0.30",
+  "accelerate>=1.0",
+  "safetensors>=0.4",
+]
 
 [project.scripts]
 student-fidelity = "student_fidelity.cli:main"

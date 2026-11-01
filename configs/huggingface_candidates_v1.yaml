@@ -1,0 +1,94 @@
+# Candidate preflight only: not a locked student-generation design.
+# Null revisions deliberately block downloads and execution until metadata is resolved.
+schema_version: 1
+created_date: "2026-11-01"
+status: candidates_preflight_only
+dataset:
+  path: data/processed/frcsub
+output_dir: runs/huggingface_preflight_v1
+cache_dir: .cache/huggingface
+seed: 42
+n_students: 100
+n_items: 20
+state: stateless
+request_workers: 1
+temperature: 0.0
+top_p: 1.0
+max_new_tokens: 1024
+noise_repeats: 200
+dina_n_starts: 30
+dina_max_iter: 300
+baselines: [independent, copula, irt, dina]
+planned_student_calls_per_model: 8000
+global_max_calls_per_model: 8800
+preflight_max_calls: 12
+
+download_allow_patterns:
+  - "*.json"
+  - "*.jinja"
+  - "*.model"
+  - "*.txt"
+  - "*.tiktoken"
+  - "*.vocab"
+  - "model*.safetensors"
+  - "tokenizer*"
+
+models:
+  - id: qwen3_4b
+    repo_id: Qwen/Qwen3-4B-Instruct-2507
+    revision: null
+    license: apache-2.0
+    device: cuda
+    dtype: bfloat16
+    local_files_only: true
+    trust_remote_code: false
+    chat_template_kwargs: {}
+  - id: phi4_mini
+    repo_id: microsoft/Phi-4-mini-instruct
+    revision: null
+    license: mit
+    device: cuda
+    dtype: bfloat16
+    local_files_only: true
+    trust_remote_code: false
+    chat_template_kwargs: {}
+  - id: mistral_nemo
+    repo_id: mistralai/Mistral-Nemo-Instruct-2407
+    revision: null
+    license: apache-2.0
+    device: cuda
+    dtype: bfloat16
+    local_files_only: true
+    trust_remote_code: false
+    chat_template_kwargs: {}
+
+preflight_checks:
+  - id: answer_first
+    prompt_strategy: answer_first
+  - id: error_examples
+    prompt_strategy: error_examples
+
+cells:
+  - id: none_answer_first
+    persona: none
+    prompt_strategy: answer_first
+    max_calls: 2200
+  - id: none_error_examples
+    persona: none
+    prompt_strategy: error_examples
+    max_calls: 2200
+  - id: attribute_answer_first
+    persona: attribute
+    prompt_strategy: answer_first
+    max_calls: 2200
+  - id: attribute_error_examples
+    persona: attribute
+    prompt_strategy: error_examples
+    max_calls: 2200
+
+model_selection:
+  scope: three_candidate_families_for_local_open_weight_preflight
+  revision_rule: full_40_character_huggingface_commit_sha_required
+  license_rule: metadata_must_match_recorded_license_before_download
+  network_rule: explicit_metadata_or_download_only_generation_is_local_files_only
+  student_generation: not_implemented_or_authorized_by_this_candidate_configuration

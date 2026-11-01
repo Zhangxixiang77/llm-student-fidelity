@@ -18,7 +18,8 @@
 - 重复学生切分诊断，以及有文献依据、但不改变主分析题目集的 item_008 剔除敏感性；
 - 在 100 人 pilot 前锁定的 G-DINA 历史配置，以及保留原界值的 DINA 修订版 `configs/pilot_gates.frcsub.dina.v2.yaml`；
 - 双人设 × 双提示策略的四单元正式 pilot 预注册、固定提供方模型与解码条件、8800 次全局调用硬上限；
-- 离线 DINA mock 和可选 OpenAI-compatible 接口；原始输出逐条保存为 JSONL；
+- 离线 DINA mock、可选 OpenAI-compatible 接口和固定 revision 的 Hugging Face 本地推理适配器；原始输出逐条保存为 JSONL；
+- 三个开放权重候选的显式元数据解析、权重下载和合成题预检流程，默认不允许学生生成；
 - 分数/混合数/有限小数等价评分、固定温度模型适配和显式断点恢复；
 - 一个完全离线、使用合成数据的端到端 demo。
 
@@ -97,6 +98,18 @@ PYTHONPATH=src python scripts/run_locked_pilot.py \
 正式执行器最多并发处理 4 名虚拟学生；每名学生内部仍按既定拉丁方顺序逐题请求。所有并发任务共享同一调用计数和输出锁，失败与在途请求都写入账本，不能突破单元或全局上限。首个单元已有 870 条请求记录后曾短暂使用 8 学生并发，触发提供方 429 限流后降为 4；这些调度调整只改变执行效率，不改变模型、提示、人设、题目顺序、样本量、温度、预算或配置 SHA。四单元的真人 split-half 噪声界值完全相同，执行器会复用经作答矩阵 SHA、重复次数和随机种子校验的离线缓存，避免重复计算；缓存不包含 LLM 作答，也不改变指标。
 
 完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA／G-DINA 同切分对照、SRMSR、逐属性后验分类置信度、留出对数似然差的配对 bootstrap 区间、题目对 Holm 检验、固定 Q 矩阵聚合敏感性、重复回读天花板和描述性关卡参照。正式审计必须用 `--dimension-b-model` 显式指定预注册模型；省略时只作探索性留出规则选择。另有独立命令执行重复切分与 item_008 剔除敏感性；真实输出均保留在本地。DINA 审计默认使用 10 组初值，DINA v2 配置指定 30 组初值和 300 次迭代上限。小样本审计不会自动给出正式推断或关卡通过结论。
+
+## Hugging Face 本地模型预检
+
+`configs/huggingface_candidates_v1.yaml` 提供 Qwen3-4B、Phi-4-mini 和 Mistral-Nemo 三个候选。它只用于固定模型版本、下载和合成题预检，**不是正式学生生成配置**。完整 40 位 commit SHA、许可证一致性和本地文件模式均为强制要求；当前候选的 revision 留空，因此真实预检默认被阻断。模型缓存、真实数据和预检输出不会提交仓库。
+
+```bash
+# 默认 dry run：不访问网络、不读数据、不加载模型
+PYTHONPATH=src python scripts/run_huggingface_preflight.py \
+  --config configs/huggingface_candidates_v1.yaml
+```
+
+在联网 GPU 机器上依次使用 `--resolve-metadata`、`--download` 和 `--execute`，详见 [`docs/huggingface_models.md`](docs/huggingface_models.md)。本地推理需要额外安装 `.[hf]` 依赖；模型逐个加载，学生级并发固定为 1。预检通过不等于候选自动进入正式实验，后续仍须单独锁定正式设计。
 
 ## 方法边界
 

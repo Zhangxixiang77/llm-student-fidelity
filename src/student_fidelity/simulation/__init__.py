@@ -1,5 +1,6 @@
 """Student-simulation interfaces and execution utilities."""
 
+from student_fidelity.simulation.huggingface import HuggingFaceLocalSimulator
 from student_fidelity.simulation.personas import Persona, attribute_personas
 from student_fidelity.simulation.runner import run_simulation
 from student_fidelity.simulation.simulators import (
@@ -12,6 +13,7 @@ from student_fidelity.simulation.simulators import (
 
 __all__ = [
     "DINAMockSimulator",
+    "HuggingFaceLocalSimulator",
     "Item",
     "OpenAICompatibleSimulator",
     "Persona",
