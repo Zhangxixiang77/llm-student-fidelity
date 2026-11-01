@@ -80,6 +80,33 @@ class SimulationTests(unittest.TestCase):
                 )
             self.assertEqual(len(output.read_text().splitlines()), 1)
 
+    def test_transport_failure_is_logged_and_counts_toward_resume_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = make_synthetic_cdm_dataset(
+                n_students=20, n_items=3, n_attributes=2, seed=10
+            )
+            fitting, holdout = train_test_split(dataset, seed=2)
+            model = DINABaseline(max_iter=5).fit(fitting)
+            personas = attribute_personas(model.sample_patterns(2, seed=3), dataset.attribute_ids)
+            output = Path(directory) / "raw.jsonl"
+            failing = Mock()
+            failing.answer.side_effect = RuntimeError("transport failed")
+            with self.assertRaisesRegex(RuntimeError, "transport failed"):
+                run_simulation(holdout, failing, personas, output, max_calls=1)
+            records = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["error_type"], "RuntimeError")
+            with self.assertRaisesRegex(RuntimeError, "call budget exhausted"):
+                run_simulation(
+                    holdout,
+                    DINAMockSimulator(model),
+                    personas,
+                    output,
+                    resume=True,
+                    max_calls=1,
+                )
+            self.assertEqual(len(output.read_text().splitlines()), 1)
+
     def test_answer_parser_accepts_code_fence(self):
         final, work = parse_structured_answer(
             '```json\n{"final_answer":"3/8","work":"brief"}\n```'
@@ -101,6 +128,32 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(str(parse_rational_answer("-1 1/2")), "-3/2")
         self.assertFalse(answers_equivalent("11/5", "6/5"))
         self.assertFalse(answers_equivalent("not a number", "6/5"))
+
+    def test_error_example_prompt_and_temperature_are_explicit(self):
+        simulator = OpenAICompatibleSimulator(
+            model="controlled-model",
+            api_key_env="TEST_API_KEY",
+            prompt_strategy="error_examples",
+            extra_body={"response_format": {"type": "json_object"}},
+        )
+        response = Mock()
+        response.json.return_value = {
+            "model": "controlled-model",
+            "choices": [
+                {"message": {"content": '{"final_answer":"3/4","work":""}'}}
+            ],
+        }
+        item = Item("i1", "1/2 + 1/4 = ?", "3/4", np.array([1]), 0)
+        with patch.dict("os.environ", {"TEST_API_KEY": "not-a-real-secret"}):
+            with patch(
+                "student_fidelity.simulation.simulators.httpx.post", return_value=response
+            ) as post:
+                simulator.answer(Persona(kind="none"), item, [], 0.0)
+        request = post.call_args.kwargs["json"]
+        self.assertEqual(request["temperature"], 0.0)
+        self.assertIn("failing to regroup", request["messages"][0]["content"])
+        self.assertEqual(request["response_format"], {"type": "json_object"})
+        self.assertEqual(simulator.metadata()["prompt_strategy"], "error_examples")
 
     def test_fixed_temperature_provider_omits_temperature(self):
         simulator = OpenAICompatibleSimulator(

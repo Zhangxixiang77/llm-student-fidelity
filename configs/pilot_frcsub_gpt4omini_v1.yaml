@@ -1,0 +1,58 @@
+# Locked before formal 100-student generation. Never place API keys in this file.
+schema_version: 1
+locked_date: "2026-11-01"
+status: locked_ready_for_preflight
+dataset:
+  path: data/processed/frcsub
+output_dir: runs/frcsub_gpt4omini_pilot_v1
+seed: 42
+n_students: 100
+n_items: 20
+state: stateless
+temperature: 0.0
+noise_repeats: 200
+dina_n_starts: 30
+dina_max_iter: 300
+baselines: [independent, copula, irt, dina]
+planned_student_calls: 8000
+global_max_calls: 8800  # Includes two preflight requests and all failed requests.
+
+simulator:
+  type: openai_compatible
+  model: gpt-4o-mini-2024-07-18
+  base_url: https://api.openai.com/v1
+  api_key_env: OPENAI_API_KEY
+  timeout: 120
+  temperature_supported: true
+  extra_body:
+    max_completion_tokens: 1024
+    response_format:
+      type: json_object
+    seed: 42
+    service_tier: default
+
+cells:
+  - id: none_answer_first
+    persona: none
+    prompt_strategy: answer_first
+    max_calls: 2200
+  - id: none_error_examples
+    persona: none
+    prompt_strategy: error_examples
+    max_calls: 2200
+  - id: attribute_answer_first
+    persona: attribute
+    prompt_strategy: answer_first
+    max_calls: 2200
+  - id: attribute_error_examples
+    persona: attribute
+    prompt_strategy: error_examples
+    max_calls: 2200
+
+model_selection:
+  reason: stable_nonreasoning_snapshot_with_explicit_temperature_control
+  model_documentation: https://platform.openai.com/docs/models/gpt-4o-mini
+  chat_completions_documentation: https://platform.openai.com/docs/api-reference/chat/create
+  minimax_exclusion: official_documents_fix_M3_and_M3.1_Flash_temperature_at_1
+  minimax_documentation: https://platform.minimax.cn/docs/api-reference/text-chat-openai
+  scope_note: closed_model_method_pilot_open_models_remain_required_for_full_experiment
