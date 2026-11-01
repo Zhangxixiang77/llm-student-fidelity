@@ -1,10 +1,10 @@
-# FrcSub 100 人 pilot 预注册：GPT-4o mini v1
+# FrcSub 100 人 pilot 预注册：GPT-4o mini v1（已替换，未执行）
 
 锁定日期：2026-11-01。机器可读设计为 `configs/pilot_frcsub_gpt4omini_v1.yaml`。本文件在正式学生样本生成前写入；运行后不得根据结果修改模型、提示、样本量、预算或关卡界值。
 
 ## 当前状态
 
-设计已锁定，代码仅完成离线测试与 dry run。**尚未执行预检，尚未生成正式学生样本，也未判定任何 pilot 关卡通过。** 执行前需要在当前进程环境中提供 `OPENAI_API_KEY`；密钥不得写入 YAML、运行清单、GitHub 或论文附件。
+本方案已在任何正式预检或学生请求发生前由 `configs/pilot_frcsub_minimax_m3_v1.yaml` 替换，配置状态为 `superseded_before_execution`。**本方案从未执行预检，从未生成正式学生样本。** 当前有效设计见 `docs/pilot_preregistration_minimax_m3.md`；本文件仅保留变更历史，不再作为执行依据。
 
 ## 模型与解码
 

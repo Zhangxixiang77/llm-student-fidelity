@@ -17,7 +17,7 @@
 - DINA／G-DINA 参数恢复、SRMSR 与题目对假阳性率模拟，以及全量 DINA 已发表参数对照；
 - 重复学生切分诊断，以及有文献依据、但不改变主分析题目集的 item_008 剔除敏感性；
 - 在 100 人 pilot 前锁定的 G-DINA 历史配置，以及保留原界值的 DINA 修订版 `configs/pilot_gates.frcsub.dina.v2.yaml`；
-- 双人设 × 双提示策略的四单元正式 pilot 预注册、固定模型快照与 8800 次全局调用硬上限；
+- 双人设 × 双提示策略的四单元正式 pilot 预注册、固定提供方模型与解码条件、8800 次全局调用硬上限；
 - 离线 DINA mock 和可选 OpenAI-compatible 接口；原始输出逐条保存为 JSONL；
 - 分数/混合数/有限小数等价评分、固定温度模型适配和显式断点恢复；
 - 一个完全离线、使用合成数据的端到端 demo。
@@ -70,7 +70,7 @@ export OPENAI_API_KEY='...'
 student-fidelity pilot --config configs/pilot.real-model.yaml
 ```
 
-MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-M3`，只用于连通性和流程 smoke，不进入正式实验；密钥从环境变量 `MINIMAX_API_KEY` 读取，不发送 `temperature`，并把实际固定值 1.0 记录在元数据中。若请求 temperature 0 会直接拒绝，避免伪造解码条件。`resume: true` 会保留已有成功记录并只补缺失题目；`run_manifest.json` 会比对数据、题目、人设、模型与解码配置，配置改变时拒绝续跑。`max_calls` 是累计请求硬上限，成功和失败请求都计入，续跑不会重置额度。
+MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。该配置只用于连通性和流程 smoke；正式 M3 pilot 使用下方独立锁定配置。密钥从环境变量 `MINIMAX_API_KEY` 读取，不发送 `temperature`，并把实际固定值 1.0 记录在元数据中。若请求 temperature 0 会直接拒绝，避免伪造解码条件。`resume: true` 会保留已有成功记录并只补缺失题目；`run_manifest.json` 会比对数据、题目、人设、模型与解码配置，配置改变时拒绝续跑。`max_calls` 是累计请求硬上限，成功和失败请求都计入，续跑不会重置额度。
 
 部分响应即使请求禁用 thinking 仍可能包含 `<think>` 并耗尽输出上限。smoke 配置因此保留原始响应、将解析失败落盘，并使用较大的输出上限；正式实验前仍需锁定模型行为与预算。
 
@@ -78,19 +78,21 @@ MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-
 
 ## 已锁定的 100 人 pilot
 
-`configs/pilot_frcsub_gpt4omini_v1.yaml` 固定 `gpt-4o-mini-2024-07-18`、temperature 0、无人设／属性人设、先答后解释／错误示例两种提示，共四个单元。每单元 100 人 × 20 题，目标共 8000 次学生请求；两次合成题预检和全部失败请求也计入 8800 次全局硬上限。详细设计与提示文本见 [`docs/pilot_preregistration.md`](docs/pilot_preregistration.md)。
+当前有效配置 `configs/pilot_frcsub_minimax_m3_v1.yaml` 固定 `MiniMax-M3`、实际 temperature 1、无人设／属性人设、先答后解释／错误示例两种提示，共四个单元。每单元 100 人 × 20 题，目标共 8000 次学生请求；两次合成题预检和全部失败请求也计入 8800 次全局硬上限。详细设计与提示文本见 [`docs/pilot_preregistration_minimax_m3.md`](docs/pilot_preregistration_minimax_m3.md)。
+
+旧 `gpt-4o-mini-2024-07-18`、temperature 0 方案已在任何正式请求发生前标记为 `superseded_before_execution`，仅保留历史，不能再执行。MiniMax 请求体不发送 temperature，避免把未生效的请求值误记为实际解码条件。
 
 ```bash
 # 只校验设计：不读密钥、不读真实数据、不调用模型
 PYTHONPATH=src python scripts/run_locked_pilot.py \
-  --config configs/pilot_frcsub_gpt4omini_v1.yaml
+  --config configs/pilot_frcsub_minimax_m3_v1.yaml
 
 # 只有显式 --execute 才会执行预检和付费学生生成
 PYTHONPATH=src python scripts/run_locked_pilot.py \
-  --config configs/pilot_frcsub_gpt4omini_v1.yaml --execute
+  --config configs/pilot_frcsub_minimax_m3_v1.yaml --execute
 ```
 
-当前只完成锁定与离线测试，尚未执行预检或正式生成。MiniMax-M3／M3.1-Flash 固定 temperature 1，继续排除在 temperature 0 正式条件之外。
+预注册锁定时只完成离线测试与 dry run，尚未执行正式预检或正式生成。MiniMax-M3 是提供方模型名而非不可变快照；运行账本保留实际 provider model 和调用日期，但不声称后端权重绝对不变。
 
 完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA／G-DINA 同切分对照、SRMSR、逐属性后验分类置信度、留出对数似然差的配对 bootstrap 区间、题目对 Holm 检验、固定 Q 矩阵聚合敏感性、重复回读天花板和描述性关卡参照。正式审计必须用 `--dimension-b-model` 显式指定预注册模型；省略时只作探索性留出规则选择。另有独立命令执行重复切分与 item_008 剔除敏感性；真实输出均保留在本地。DINA 审计默认使用 10 组初值，DINA v2 配置指定 30 组初值和 300 次迭代上限。小样本审计不会自动给出正式推断或关卡通过结论。
 
@@ -102,7 +104,7 @@ PYTHONPATH=src python scripts/run_locked_pilot.py \
 - CDM 指标只作辅证，避免用 CDM 指标循环证明 CDM 生成基线优越。
 - 完整作答模式 TV 距离在稀疏样本下只作描述。
 - 有状态条件只保留该学生自己的历史；RQ3 的错配历史、干扰项 JS 散度与错误概念一致性将在有合格数据后实现。
-- 开源模型本地推理、闭源模型的版本锁定与批量容错需在确定 pilot 模型后补充。
+- MiniMax-M3 的版本锁定只能精确到提供方模型名与调用记录，不能等同于固定权重快照；开源模型本地推理留待正式全实验。
 
 ## 仓库结构
 
