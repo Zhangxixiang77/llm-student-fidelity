@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from numpy.typing import NDArray
 
 from student_fidelity.baselines import DINABaseline, IRT2PLBaseline, make_baseline
 from student_fidelity.data import ResponseDataset, train_test_split
@@ -27,6 +28,65 @@ from student_fidelity.simulation import (
     attribute_personas,
     run_simulation,
 )
+
+
+def _noise_cache_metadata(
+    dataset: ResponseDataset, n_repeats: int, seed: int
+) -> dict[str, Any]:
+    return {
+        "responses_sha256": hashlib.sha256(dataset.responses.tobytes()).hexdigest(),
+        "n_repeats": n_repeats,
+        "seed": seed,
+    }
+
+
+def _validated_noise(values: Any, n_repeats: int) -> NDArray[np.float64]:
+    noise = np.asarray(values, dtype=np.float64)
+    if noise.shape != (n_repeats,) or not np.isfinite(noise).all():
+        raise ValueError("cached split-half noise has an invalid shape or values")
+    return noise
+
+
+def _write_noise_cache(
+    path: Path, noise: NDArray[np.float64], metadata: dict[str, Any]
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp.npz")
+    np.savez(temporary, values=noise, metadata=json.dumps(metadata, sort_keys=True))
+    temporary.replace(path)
+
+
+def _load_or_compute_split_half_noise(
+    dataset: ResponseDataset,
+    n_repeats: int,
+    seed: int,
+    cache_path: str | Path | None,
+    run_noise_path: str | Path,
+) -> NDArray[np.float64]:
+    """Reuse only identical real-data noise estimates; never cache LLM responses."""
+
+    metadata = _noise_cache_metadata(dataset, n_repeats, seed)
+    cache = Path(cache_path) if cache_path is not None else None
+    if cache is not None and cache.exists():
+        with np.load(cache, allow_pickle=False) as saved:
+            saved_metadata = json.loads(str(saved["metadata"].item()))
+            if saved_metadata != metadata:
+                raise ValueError("split-half noise cache does not match this dataset and design")
+            return _validated_noise(saved["values"], n_repeats)
+
+    run_path = Path(run_noise_path)
+    noise = None
+    if run_path.exists():
+        frame = pd.read_csv(run_path)
+        if list(frame.columns) == ["split_half_dependency_rmse"]:
+            noise = _validated_noise(
+                frame["split_half_dependency_rmse"].to_numpy(), n_repeats
+            )
+    if noise is None:
+        noise = _validated_noise(split_half_noise(dataset, n_repeats, seed), n_repeats)
+    if cache is not None:
+        _write_noise_cache(cache, noise, metadata)
+    return noise
 
 
 def execute_pilot(
@@ -46,6 +106,7 @@ def execute_pilot(
     dina_n_starts: int = 10,
     dina_max_iter: int = 100,
     max_workers: int = 1,
+    noise_cache_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run one experimental cell; callers must repeat cells/seeds for the full design."""
 
@@ -171,11 +232,16 @@ def execute_pilot(
         results[name] = evaluate_structure(holdout.responses, generated)
         _write_responses(generated, generated_dir / f"{name}.csv")
 
-    noise = split_half_noise(dataset, n_repeats=noise_repeats, seed=seed + 100)
-    delta = float(np.quantile(noise, 0.95))
-    pd.DataFrame({"split_half_dependency_rmse": noise}).to_csv(
-        output_dir / "split_half_noise.csv", index=False
+    noise_path = output_dir / "split_half_noise.csv"
+    noise = _load_or_compute_split_half_noise(
+        dataset,
+        n_repeats=noise_repeats,
+        seed=seed + 100,
+        cache_path=noise_cache_path,
+        run_noise_path=noise_path,
     )
+    delta = float(np.quantile(noise, 0.95))
+    pd.DataFrame({"split_half_dependency_rmse": noise}).to_csv(noise_path, index=False)
     rows = []
     for condition, metrics in results.items():
         rows.append(

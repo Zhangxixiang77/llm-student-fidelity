@@ -35,6 +35,13 @@ class AuditTests(unittest.TestCase):
             raw_path = run_dir / "raw_simulation.jsonl"
             records = [json.loads(line) for line in raw_path.read_text().splitlines()]
             records[0]["response_metadata"] = {"finish_reason": "length"}
+            records.append(
+                {
+                    "student_id": "virtual_0002",
+                    "error": "unparsed truncated response",
+                    "response_metadata": {"finish_reason": "length"},
+                }
+            )
             raw_path.write_text(
                 "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
             )
@@ -48,7 +55,8 @@ class AuditTests(unittest.TestCase):
             )
             audit = json.loads(output.read_text())
             self.assertEqual(audit["response_audit"]["scored_records"], 30)
-            self.assertEqual(audit["length_sensitivity"]["n_retained_students"], 5)
+            self.assertEqual(audit["response_audit"]["attempt_records"], 31)
+            self.assertEqual(audit["length_sensitivity"]["n_retained_students"], 4)
             self.assertEqual(audit["readback_ceiling"]["n_repeats"], 2)
             self.assertIn("holdout_srmsr", audit["dina_fit_diagnostics"])
             self.assertEqual(audit["cdm_fit_comparison"]["n_bootstrap"], 20)

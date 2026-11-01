@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,6 +7,7 @@ from unittest.mock import Mock, patch
 import yaml
 
 from student_fidelity.pilot_runner import (
+    _cell_is_complete,
     _run_preflight,
     attempt_count,
     load_locked_design,
@@ -56,6 +58,30 @@ class LockedPilotTests(unittest.TestCase):
                 '{"is_correct": true}\n{"error_type": "HTTPStatusError"}\n'
             )
             self.assertEqual(attempt_count(path), 2)
+
+    def test_completed_cell_requires_matching_summary_and_unique_successes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = {
+                "student_id": "student_000",
+                "item_id": "item_001",
+                "final_answer": "1/2",
+            }
+            (root / "raw_simulation.jsonl").write_text(
+                json.dumps(record) + "\n" + json.dumps({"error": "transport"}) + "\n"
+            )
+            (root / "run_manifest.json").write_text(
+                json.dumps({"configuration_sha256": "abc"})
+            )
+            (root / "summary.json").write_text(
+                json.dumps({"configuration_sha256": "abc"})
+            )
+            self.assertTrue(_cell_is_complete(root, 1))
+            self.assertFalse(_cell_is_complete(root, 2))
+            (root / "summary.json").write_text(
+                json.dumps({"configuration_sha256": "changed"})
+            )
+            self.assertFalse(_cell_is_complete(root, 1))
 
     def test_preflight_covers_both_prompts_and_resumes_without_new_calls(self):
         root = Path(__file__).resolve().parents[1]

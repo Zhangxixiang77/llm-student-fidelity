@@ -107,6 +107,26 @@ def total_attempts(root: Path, config: dict[str, Any]) -> int:
     return sum(attempt_count(path) for path in _ledger_paths(root, config))
 
 
+def _cell_is_complete(cell_root: Path, expected_successes: int) -> bool:
+    summary_path = cell_root / "summary.json"
+    manifest_path = cell_root / "run_manifest.json"
+    raw_path = cell_root / "raw_simulation.jsonl"
+    if not all(path.exists() for path in (summary_path, manifest_path, raw_path)):
+        return False
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if summary.get("configuration_sha256") != manifest.get("configuration_sha256"):
+        return False
+    records = [
+        json.loads(line)
+        for line in raw_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    successes = [record for record in records if "final_answer" in record]
+    pairs = {(record["student_id"], record["item_id"]) for record in successes}
+    return len(successes) == expected_successes and len(pairs) == expected_successes
+
+
 def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as output:
@@ -235,6 +255,10 @@ def run_locked_pilot(config_path: str | Path, execute: bool = False) -> dict[str
 
     for cell in config["cells"]:
         cell_root = root / cell["id"]
+        if _cell_is_complete(
+            cell_root, config["n_students"] * config["n_items"]
+        ):
+            continue
         raw_path = cell_root / "raw_simulation.jsonl"
         cell_attempts = attempt_count(raw_path)
         remaining = config["global_max_calls"] - total_attempts(root, config)
@@ -260,6 +284,7 @@ def run_locked_pilot(config_path: str | Path, execute: bool = False) -> dict[str
             dina_n_starts=config["dina_n_starts"],
             dina_max_iter=config["dina_max_iter"],
             max_workers=REQUEST_WORKERS,
+            noise_cache_path=root / "shared_split_half_noise.npz",
         )
 
     plan["attempts_after_run"] = total_attempts(root, config)

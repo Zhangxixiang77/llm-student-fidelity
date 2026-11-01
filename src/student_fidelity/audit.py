@@ -164,7 +164,7 @@ def audit_run(
     truncated_ids = sorted(
         {
             record["student_id"]
-            for record in scored
+            for record in records
             if record.get("response_metadata", {}).get("finish_reason") == "length"
         }
     )
