@@ -1,7 +1,9 @@
 # Locked before formal 100-student generation. Never place API keys in this file.
 schema_version: 1
 locked_date: "2026-11-01"
-status: locked_ready_for_preflight
+status: superseded_before_execution
+superseded_by: configs/pilot_frcsub_minimax_m3_v1.yaml
+superseded_date: "2026-11-01"
 dataset:
   path: data/processed/frcsub
 output_dir: runs/frcsub_gpt4omini_pilot_v1

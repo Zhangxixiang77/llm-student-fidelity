@@ -16,7 +16,7 @@ from student_fidelity.pilot_runner import run_locked_pilot
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config", default="configs/pilot_frcsub_gpt4omini_v1.yaml"
+        "--config", default="configs/pilot_frcsub_minimax_m3_v1.yaml"
     )
     parser.add_argument(
         "--execute",

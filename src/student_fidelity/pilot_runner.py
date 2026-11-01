@@ -30,8 +30,8 @@ def validate_locked_design(config: dict[str, Any]) -> None:
         raise ValueError("pilot must be locked before execution")
     if config.get("n_students") != 100 or config.get("n_items") != 20:
         raise ValueError("locked pilot requires 100 students and 20 items")
-    if config.get("temperature") != 0.0 or config.get("state") != "stateless":
-        raise ValueError("locked pilot requires temperature 0 and stateless responses")
+    if config.get("state") != "stateless":
+        raise ValueError("locked pilot requires stateless responses")
     if config.get("global_max_calls") != 8800:
         raise ValueError("locked cumulative call budget must be 8800")
     if config.get("dina_n_starts") != 30 or config.get("dina_max_iter") != 300:
@@ -39,10 +39,25 @@ def validate_locked_design(config: dict[str, Any]) -> None:
     simulator = config.get("simulator", {})
     if simulator.get("type") != "openai_compatible":
         raise ValueError("formal pilot requires an explicit real model")
-    if not simulator.get("temperature_supported", False):
-        raise ValueError("formal pilot model must support explicit temperature")
-    if simulator.get("fixed_temperature") is not None:
-        raise ValueError("fixed-temperature models are ineligible for the formal pilot")
+    temperature = config.get("temperature")
+    fixed_temperature = simulator.get("fixed_temperature")
+    if simulator.get("temperature_supported", False):
+        if fixed_temperature is not None:
+            raise ValueError("fixed-temperature models are ineligible for explicit control")
+        if temperature != 0.0:
+            raise ValueError("explicit-temperature pilot requires temperature 0")
+    else:
+        if fixed_temperature is None or temperature != fixed_temperature:
+            raise ValueError("locked temperature must equal the model's fixed temperature")
+    checks = _preflight_checks(config)
+    if len(checks) != 2 or len({check.get("id") for check in checks}) != 2:
+        raise ValueError("locked pilot requires two uniquely identified preflight checks")
+    for check in checks:
+        if check.get("prompt_strategy") not in {"answer_first", "error_examples"}:
+            raise ValueError("invalid preflight prompt strategy")
+        if not simulator.get("temperature_supported", False):
+            if check.get("temperature") != fixed_temperature:
+                raise ValueError("fixed-temperature preflight uses an unapplied value")
     cells = config.get("cells")
     if not isinstance(cells, list) or len(cells) != 4:
         raise ValueError("locked pilot requires exactly four cells")
@@ -95,6 +110,16 @@ def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
         output.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _preflight_checks(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return config.get(
+        "preflight_checks",
+        [
+            {"id": "temperature_0", "temperature": 0.0, "prompt_strategy": "answer_first"},
+            {"id": "temperature_1", "temperature": 1.0, "prompt_strategy": "answer_first"},
+        ],
+    )
+
+
 def _run_preflight(root: Path, config: dict[str, Any]) -> None:
     path = root / "preflight.jsonl"
     existing = []
@@ -107,7 +132,6 @@ def _run_preflight(root: Path, config: dict[str, Any]) -> None:
     simulator_config = {
         key: value for key, value in config["simulator"].items() if key != "type"
     }
-    simulator = OpenAICompatibleSimulator(**simulator_config)
     item = Item(
         item_id="preflight",
         text="Compute 1/2 + 1/4.",
@@ -115,9 +139,14 @@ def _run_preflight(root: Path, config: dict[str, Any]) -> None:
         q_vector=np.zeros(8, dtype=np.int8),
         index=0,
     )
-    for temperature in (0.0, 1.0):
+    for check in _preflight_checks(config):
+        temperature = check["temperature"]
+        prompt_strategy = check["prompt_strategy"]
+        simulator = OpenAICompatibleSimulator(
+            **simulator_config, prompt_strategy=prompt_strategy
+        )
         if any(
-            record.get("temperature") == temperature and "final_answer" in record
+            record.get("check_id") == check["id"] and "final_answer" in record
             for record in existing
         ):
             continue
@@ -129,6 +158,8 @@ def _run_preflight(root: Path, config: dict[str, Any]) -> None:
             _append_jsonl(
                 path,
                 {
+                    "check_id": check["id"],
+                    "prompt_strategy": prompt_strategy,
                     "temperature": temperature,
                     "error_type": type(error).__name__,
                     "error": str(error),
@@ -138,6 +169,8 @@ def _run_preflight(root: Path, config: dict[str, Any]) -> None:
             )
             raise
         record = {
+            "check_id": check["id"],
+            "prompt_strategy": prompt_strategy,
             "temperature": temperature,
             "final_answer": answer.final_answer,
             "work": answer.work,
@@ -171,7 +204,7 @@ def run_locked_pilot(config_path: str | Path, execute: bool = False) -> dict[str
     plan = {
         "configuration_sha256": digest,
         "planned_student_calls": config["planned_student_calls"],
-        "planned_preflight_calls": 2,
+        "planned_preflight_calls": len(_preflight_checks(config)),
         "global_max_calls": config["global_max_calls"],
         "attempts_before_run": total_attempts(root, config),
         "cells": [cell["id"] for cell in config["cells"]],
