@@ -14,6 +14,7 @@
 - 属性与模式回读、DINA／G-DINA 可达天花板、合格属性限定分析、隐含 slip/guess 与能力泄漏率；
 - 留出题目对相关／log-OR 检验、Holm 校正、稀疏单元格诊断和固定 Q 矩阵敏感性；
 - DINA 可复现多组随机初值、按训练边际对数似然选优及逐初值收敛审计；
+- DINA／G-DINA 参数恢复、SRMSR 与题目对假阳性率模拟，以及全量 DINA 已发表参数对照；
 - 重复学生切分诊断，以及有文献依据、但不改变主分析题目集的 item_008 剔除敏感性；
 - 在 100 人 pilot 前锁定的 G-DINA 关卡配置 `configs/pilot_gates.frcsub.yaml`；
 - 离线 DINA mock 和可选 OpenAI-compatible 接口；原始输出逐条保存为 JSONL；
@@ -78,7 +79,7 @@ MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-
 
 ## 方法边界
 
-- Python 中的 DINA EM、logit-link G-DINA EM 与 2PL MML 是透明、可测试的轻量基线实现；G-DINA 使用弱 ridge 保证数值稳定，并记录收敛状态。SRMSR、题目对检验与配对 bootstrap 支持单次及重复切分的 pilot 诊断；recurrence 只表示切分稳定性，不是新的确认性 p 值。DINA 已支持确定性初值加可复现随机初值，并保留全部初值的训练似然与收敛记录。正式论文仍需用 R 的 GDINA/CDM 复核参数、拟合和分类准确性；`scripts/r_cdm_crosscheck.R` 提供了 GDINA 包对照路径，但当前环境没有 R，该脚本尚未执行，不能视为已完成复核。本仓库尚未实现混合效应 logistic 回归。
+- Python 中的 DINA EM、logit-link G-DINA EM 与 2PL MML 是透明、可测试的轻量基线实现；G-DINA 使用弱 ridge 保证数值稳定，并记录收敛状态。SRMSR、题目对检验与配对 bootstrap 支持单次及重复切分的 pilot 诊断；recurrence 只表示切分稳定性，不是新的确认性 p 值。DINA 保留全部初值的训练似然与收敛记录。估计器验证以多初值、参数恢复和已发表参数对照为主，见 [`docs/estimator_validation.md`](docs/estimator_validation.md)；R `scripts/r_cdm_crosscheck.R` 仅为可选外部交叉检查，当前未执行。本仓库尚未实现混合效应 logistic 回归。
 - 四分相关使用 0.5 连续性校正的成对最大似然估计，并限制在 ±0.95，适合小样本试点；正式分析需固定平滑规则并做敏感性分析。
 - `noise_delta_95` 只是等效判定的一部分。正式“三档判定”还需要预先规定的 bootstrap CI、重复切分和多重比较方案，不能只看一个点估计。
 - CDM 指标只作辅证，避免用 CDM 指标循环证明 CDM 生成基线优越。
@@ -100,6 +101,7 @@ src/student_fidelity/
 ├── q_sensitivity.py         # 预先固定的属性聚合敏感性
 ├── repeated_splits.py       # 重复学生切分与局部失拟合 recurrence
 ├── item_sensitivity.py      # 保留全部题目的主分析＋剔除敏感性
+├── parameter_recovery.py    # 参数恢复、SRMSR 与题目对拒绝率模拟
 ├── experiment.py            # 单个 pilot 单元编排
 └── cli.py
 ```
