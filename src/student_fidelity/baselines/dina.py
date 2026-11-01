@@ -116,7 +116,8 @@ class DINABaseline:
             pattern_prior = np.clip(posterior.mean(axis=0), 1e-12, 1)
             pattern_prior /= pattern_prior.sum()
             expected_mastery = posterior @ self.eta_
-            expected_nonmastery = n_students - expected_mastery
+            # N x J posterior probabilities; complement studentwise, not against N.
+            expected_nonmastery = 1.0 - expected_mastery
             updated_slip = np.divide(
                 (expected_mastery * (1 - responses)).sum(axis=0),
                 expected_mastery.sum(axis=0),
@@ -159,15 +160,9 @@ class DINABaseline:
     def _pattern_log_likelihood(
         self, responses: NDArray[np.float64], slip: NDArray[np.float64], guess: NDArray[np.float64]
     ) -> NDArray[np.float64]:
-        result = np.empty((responses.shape[0], self.patterns_.shape[0]))
-        for pattern in range(self.patterns_.shape[0]):
-            p_correct = np.where(self.eta_[pattern] == 1, 1 - slip, guess)
-            p_correct = np.clip(p_correct, 1e-8, 1 - 1e-8)
-            result[:, pattern] = (
-                responses * np.log(p_correct)[None, :]
-                + (1 - responses) * np.log1p(-p_correct)[None, :]
-            ).sum(axis=1)
-        return result
+        p_correct = np.where(self.eta_ == 1, 1 - slip[None, :], guess[None, :])
+        p_correct = np.clip(p_correct, 1e-8, 1 - 1e-8)
+        return responses @ np.log(p_correct).T + (1 - responses) @ np.log1p(-p_correct).T
 
     def posterior_patterns(self, responses: NDArray[np.int8]) -> NDArray[np.float64]:
         self._check_fitted()

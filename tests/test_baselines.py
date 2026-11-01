@@ -8,7 +8,7 @@ from student_fidelity.baselines import (
     IndependentBernoulliBaseline,
     IRT2PLBaseline,
 )
-from student_fidelity.data import make_synthetic_cdm_dataset
+from student_fidelity.data import ResponseDataset, make_synthetic_cdm_dataset
 
 
 class BaselineTests(unittest.TestCase):
@@ -50,6 +50,19 @@ class BaselineTests(unittest.TestCase):
         confidence = model.classification_confidence(dataset.responses)
         self.assertEqual(len(confidence["attribute_classification_confidence"]), 3)
         self.assertGreaterEqual(model.srmsr(dataset.responses), 0)
+
+    def test_dina_em_uses_studentwise_nonmastery_probabilities(self):
+        dataset = ResponseDataset(
+            responses=np.array([[0], [1], [1]], dtype=np.int8),
+            q_matrix=np.array([[1]], dtype=np.int8),
+            item_texts=["one item"],
+            answer_keys=["correct"],
+        )
+        model = DINABaseline(max_iter=1).fit(dataset)
+        # With slip=guess=0.1, the first E step gives mastery probabilities
+        # [0.1, 0.9, 0.9]. Nonmastery is 1 minus these values, not N minus them.
+        self.assertAlmostEqual(model.guess_[0], 2 / 11)
+        self.assertAlmostEqual(model.slip_[0], 1 / 19)
 
     def test_dina_multistart_is_reproducible_and_selects_best_likelihood(self):
         dataset = make_synthetic_cdm_dataset(
