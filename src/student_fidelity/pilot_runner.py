@@ -16,7 +16,7 @@ from student_fidelity.simulation.personas import Persona
 from student_fidelity.simulation.simulators import Item, OpenAICompatibleSimulator
 
 
-REQUEST_WORKERS = 8
+REQUEST_WORKERS = 4
 
 
 def load_locked_design(path: str | Path) -> dict[str, Any]:
