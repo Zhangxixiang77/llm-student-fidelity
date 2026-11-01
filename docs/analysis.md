@@ -11,10 +11,13 @@ PYTHONPATH=src python scripts/audit_run.py \
   --ceiling-repeats 100 \
   --comparison-bootstraps 1000 \
   --itemfit-simulations 100000 \
-  --dina-starts 10
+  --dina-starts 30 \
+  --dina-max-iter 300 \
+  --gdina-max-iter 300 \
+  --dimension-b-model dina
 ```
 
-输出 `audit.json`，包括请求数、失败数、finish reason、token usage、主要指标、DINA／G-DINA 同切分拟合对照、留出题目对检验、固定 Q 矩阵敏感性、两种模型的重复回读天花板和描述性关卡参照。真实数据与运行输出仍由 `.gitignore` 排除。
+输出 `audit.json`，包括请求数、失败数、finish reason、token usage、主要指标、DINA／G-DINA 同切分拟合对照、留出题目对检验、固定 Q 矩阵敏感性、两种模型的重复回读天花板和描述性关卡参照。两种模型的条件残差都会保留；`--dimension-b-model` 决定正式关卡参照使用哪一个，并记录为 `preregistered_argument`。省略该参数时才使用探索性留出规则，不能在看到正式 pilot 结果后据此换模。真实数据与运行输出仍由 `.gitignore` 排除。
 
 ## `length` 敏感性
 
@@ -28,7 +31,9 @@ PYTHONPATH=src python scripts/audit_run.py \
 
 这只是研究计划中模型选择规则的 pilot 实现，不等于关卡 1 通过。G-DINA 使用饱和题目反应函数、弱 ridge 和确定性的 DINA 式初始化；审计记录迭代次数、收敛状态、正则化强度和名义参数量。DINA 默认使用 1 组原确定性初值和 9 组可复现随机初值；随机初值从 Dirichlet 掌握模式先验及独立 slip/guess 区间抽取。每组独立运行 EM，按最终训练边际对数似然选优，完整保留各组似然、迭代次数和收敛状态，不因未收敛而静默丢弃。估计器验证以多初值、参数恢复和已发表参数对照为主，见 `docs/estimator_validation.md`；R 只作可选外部交叉检查。重复切分与题目对检验由下方独立命令执行。
 
-当暂选 G-DINA 时，实际回读也使用 G-DINA。`gdina_mean_residual` 是观察正确率减指定掌握模式下的模型预测正确率；`gdina_mean_master_shortfall` 在 DINA 理想掌握题上反向计算该残差，`gdina_mean_nonmaster_excess` 在非掌握题上正向计算。关卡 3 已在 100 人 pilot 前锁定为后者在全部 20 题上的未加权均值不超过 0.30；旧的 DINA guess＋0.30 参照不再使用。锁定规则见 `configs/pilot_gates.frcsub.yaml`，运行后不得根据结果调整。
+审计同时计算 DINA 与 G-DINA 的实际回读和条件残差。`dina_mean_residual`／`gdina_mean_residual` 是观察正确率减指定掌握模式下的模型预测正确率；对应的 `mean_master_shortfall` 在 DINA 理想掌握题上反向计算该残差，`mean_nonmaster_excess` 在非掌握题上正向计算。DINA 残差使用指定 α 下的条件 DINA 预测，不是把拟合 guess 直接当作残差，也不使用 posterior 分类替代指定 α。
+
+DINA v2 将关卡 3 锁定为 `dina_mean_nonmaster_excess` 在全部 20 题上的未加权均值不超过 0.30，定义、题目范围、分析人群和长度敏感性角色均与旧版一致。旧 G-DINA 配置保留在 `configs/pilot_gates.frcsub.yaml`；修订版为 `configs/pilot_gates.frcsub.dina.v2.yaml`，并明确记录 supersede 关系。修订发生在正式 100 人生成之前，运行后不得根据结果调整模型或界值。
 
 ## 留出题目对拟合检验
 
@@ -107,9 +112,9 @@ PYTHONPATH=src python scripts/item008_sensitivity.py \
 
 ## 属性层回读与锁定关卡
 
-FrcSub 主 Q 矩阵始终为 `original_8`。模式层回读不进入正式分析；属性层只分析回读天花板至少为 0.80 的四个预定属性：`separate_whole_from_fraction`、`borrow_from_whole_part`、`subtract_numerators` 和 `reduce_to_simplest_form`。审计同时输出 `gdina_eligible_attribute_readback_agreement` 及逐属性结果，配置一致性由测试检查。
+FrcSub 主 Q 矩阵始终为 `original_8`。模式层回读不进入正式分析；属性层只分析回读天花板至少为 0.80 的四个预定属性：`separate_whole_from_fraction`、`borrow_from_whole_part`、`subtract_numerators` 和 `reduce_to_simplest_form`。审计同时输出 `dina_eligible_attribute_readback_agreement`、`gdina_eligible_attribute_readback_agreement` 及逐属性结果，配置一致性由测试检查。
 
-关卡 3 的指标、聚合方式、题目范围、0.30 界值与长度敏感性角色均锁定在 `configs/pilot_gates.frcsub.yaml`。当前配置只锁定规则，不表示 100 人 pilot 已运行或通过。MiniMax-M3 固定温度结果只用于 smoke，不进入正式实验。
+关卡 3 的指标、聚合方式、题目范围、0.30 界值与长度敏感性角色均锁定在 DINA v2 配置中。该配置只锁定维度 B 与关卡规则，`formal_experiment_status` 仍明确标记正式模型和预算未锁定，不表示 100 人 pilot 已运行或通过。MiniMax-M3 固定温度结果只用于 smoke，不进入正式实验。
 
 ## DINA 诊断的含义
 

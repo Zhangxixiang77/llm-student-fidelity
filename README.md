@@ -16,7 +16,7 @@
 - DINA 可复现多组随机初值、按训练边际对数似然选优及逐初值收敛审计；
 - DINA／G-DINA 参数恢复、SRMSR 与题目对假阳性率模拟，以及全量 DINA 已发表参数对照；
 - 重复学生切分诊断，以及有文献依据、但不改变主分析题目集的 item_008 剔除敏感性；
-- 在 100 人 pilot 前锁定的 G-DINA 关卡配置 `configs/pilot_gates.frcsub.yaml`；
+- 在 100 人 pilot 前锁定的 G-DINA 历史配置，以及保留原界值的 DINA 修订版 `configs/pilot_gates.frcsub.dina.v2.yaml`；
 - 离线 DINA mock 和可选 OpenAI-compatible 接口；原始输出逐条保存为 JSONL；
 - 分数/混合数/有限小数等价评分、固定温度模型适配和显式断点恢复；
 - 一个完全离线、使用合成数据的端到端 demo。
@@ -75,7 +75,7 @@ MiniMax 的小样本配置见 `configs/pilot.minimax.yaml`。它使用 `MiniMax-
 
 每次 `pilot` 只运行一个“人设 × 状态 × 解码 × 模型”单元。完整设计需要由外层实验清单重复运行，并使用不同输出目录；不要在正式生成后修改预先锁定的关卡阈值。
 
-完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA／G-DINA 同切分对照、SRMSR、逐属性后验分类置信度、留出对数似然差的配对 bootstrap 区间、题目对 Holm 检验、固定 Q 矩阵聚合敏感性、重复回读天花板和描述性关卡参照。另有独立命令执行重复切分与 item_008 剔除敏感性；真实输出均保留在本地。DINA 审计默认使用 10 组初值，重复切分可用 `--dina-starts` 和 `--dina-max-iter` 显式控制。小样本审计不会自动给出正式推断或关卡通过结论。
+完成运行后可按 [`docs/analysis.md`](docs/analysis.md) 执行离线审计，获得截断敏感性、DINA／G-DINA 同切分对照、SRMSR、逐属性后验分类置信度、留出对数似然差的配对 bootstrap 区间、题目对 Holm 检验、固定 Q 矩阵聚合敏感性、重复回读天花板和描述性关卡参照。正式审计必须用 `--dimension-b-model` 显式指定预注册模型；省略时只作探索性留出规则选择。另有独立命令执行重复切分与 item_008 剔除敏感性；真实输出均保留在本地。DINA 审计默认使用 10 组初值，DINA v2 配置指定 30 组初值和 300 次迭代上限。小样本审计不会自动给出正式推断或关卡通过结论。
 
 ## 方法边界
 

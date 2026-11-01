@@ -1,0 +1,50 @@
+# DINA revision locked before the 100-student pilot. Do not tune after seeing pilot results.
+schema_version: 2
+locked_date: "2026-11-01"
+diagnostics_commit: 16cc6f52e64a8b975823dea862bd031c2ef8f3e6
+supersedes: configs/pilot_gates.frcsub.yaml
+revision_reason: >-
+  Corrected DINA outperformed G-DINA on all 20 repeated human-data holdout splits;
+  this model revision occurs before formal 100-student generation and does not relax any gate.
+formal_experiment_status: model_and_budget_not_locked
+dataset: frcsub
+primary_q_matrix: original_8
+
+dimension_b:
+  model: dina
+  estimator:
+    dina_n_starts: 30
+    dina_max_iter: 300
+    gdina_max_iter: 300
+  pattern_readback_enabled: false
+  attribute_readback:
+    selection_rule: readback_ceiling_at_least_0_80
+    minimum_ceiling: 0.80
+    eligible_attributes:
+      - separate_whole_from_fraction
+      - borrow_from_whole_part
+      - subtract_numerators
+      - reduce_to_simplest_form
+
+gate_1:
+  srmsr_max: 0.05
+  item_pair_adjustment: holm
+  item_pair_rule: no_widespread_significant_residuals
+  current_status: not_passed
+
+gate_2:
+  attribute_ceiling_min: 0.80
+  pattern_ceiling_min: 0.50
+  current_status: not_passed_use_attribute_fallback
+
+gate_3:
+  metric: dina_mean_nonmaster_excess
+  definition: predicted_correctness_subtracted_from_observed_on_eta_0_items
+  aggregation: unweighted_mean_of_item_level_nonmaster_excess
+  item_scope: all_20_items
+  analysis_population: primary_all_scored
+  threshold_max: 0.30
+  pass_rule: at_least_one_prompt_strategy_at_or_below_threshold
+  planned_virtual_students_per_condition: 100
+  length_sensitivity: report_only_not_gate_selection
+  current_status: locked_not_run
