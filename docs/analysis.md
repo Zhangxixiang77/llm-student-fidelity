@@ -114,7 +114,7 @@ PYTHONPATH=src python scripts/item008_sensitivity.py \
 
 FrcSub 主 Q 矩阵始终为 `original_8`。模式层回读不进入正式分析；属性层只分析回读天花板至少为 0.80 的四个预定属性：`separate_whole_from_fraction`、`borrow_from_whole_part`、`subtract_numerators` 和 `reduce_to_simplest_form`。审计同时输出 `dina_eligible_attribute_readback_agreement`、`gdina_eligible_attribute_readback_agreement` 及逐属性结果，配置一致性由测试检查。
 
-关卡 3 的指标、聚合方式、题目范围、0.30 界值与长度敏感性角色均锁定在 DINA v2 配置中。该配置只锁定维度 B 与关卡规则，`formal_experiment_status` 仍明确标记正式模型和预算未锁定，不表示 100 人 pilot 已运行或通过。MiniMax-M3 固定温度结果只用于 smoke，不进入正式实验。
+关卡 3 的指标、聚合方式、题目范围、0.30 界值与长度敏感性角色均锁定在 DINA v2 配置中。该配置只锁定维度 B 与关卡规则，其中 `formal_experiment_status` 是当时的决策历史。正式模型、四单元样本与 8800 次全局预算后来另在 `configs/pilot_frcsub_gpt4omini_v1.yaml` 和 `docs/pilot_preregistration.md` 中锁定；这不表示 100 人 pilot 已运行或通过。MiniMax-M3 固定温度结果只用于 smoke，不进入正式实验。
 
 ## DINA 诊断的含义
 
