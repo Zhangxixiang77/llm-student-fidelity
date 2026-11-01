@@ -208,6 +208,50 @@ class DINABaseline:
         rng = np.random.default_rng(seed + 1)
         return rng.binomial(1, p_correct).astype(np.int8)
 
+    def response_residuals(
+        self, responses: NDArray[np.int8], alpha: NDArray[np.int8]
+    ) -> dict[str, object]:
+        """Observed-minus-predicted correctness for assigned mastery patterns.
+
+        Master shortfall is predicted-minus-observed correctness on DINA-ideal
+        mastery items; nonmaster excess is observed-minus-predicted correctness
+        on the remaining items. These residuals use conditional DINA predictions,
+        not the raw fitted slip/guess parameters or posterior classifications.
+        """
+
+        self._check_fitted()
+        responses = np.asarray(responses, dtype=np.int8)
+        if responses.ndim != 2 or responses.shape[1] != self.q_matrix_.shape[0]:
+            raise ValueError("responses have incompatible dimensions")
+        if not np.isin(responses, [0, 1]).all():
+            raise ValueError("only complete binary responses are supported")
+        alpha = np.asarray(alpha, dtype=np.int8)
+        if alpha.shape != (responses.shape[0], self.q_matrix_.shape[1]):
+            raise ValueError("alpha has incompatible dimensions")
+        masters = ideal_dina_responses(alpha, self.q_matrix_).astype(bool)
+        predicted = np.where(
+            masters, 1 - self.slip_[None, :], self.guess_[None, :]
+        )
+        observed = responses.astype(float)
+        residual = observed - predicted
+        master_shortfall = np.full(self.q_matrix_.shape[0], np.nan)
+        nonmaster_excess = np.full(self.q_matrix_.shape[0], np.nan)
+        for item in range(self.q_matrix_.shape[0]):
+            if masters[:, item].any():
+                master_shortfall[item] = -residual[masters[:, item], item].mean()
+            if (~masters[:, item]).any():
+                nonmaster_excess[item] = residual[~masters[:, item], item].mean()
+        return {
+            "dina_item_predicted_p_correct": predicted.mean(axis=0).tolist(),
+            "dina_item_observed_p_correct": observed.mean(axis=0).tolist(),
+            "dina_item_mean_residual": residual.mean(axis=0).tolist(),
+            "dina_item_master_shortfall": master_shortfall.tolist(),
+            "dina_item_nonmaster_excess": nonmaster_excess.tolist(),
+            "dina_mean_residual": float(residual.mean()),
+            "dina_mean_master_shortfall": float(np.nanmean(master_shortfall)),
+            "dina_mean_nonmaster_excess": float(np.nanmean(nonmaster_excess)),
+        }
+
     def classification_confidence(
         self, responses: NDArray[np.int8]
     ) -> dict[str, object]:

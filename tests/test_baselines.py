@@ -51,6 +51,25 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(len(confidence["attribute_classification_confidence"]), 3)
         self.assertGreaterEqual(model.srmsr(dataset.responses), 0)
 
+    def test_dina_response_residuals_use_conditional_predictions(self):
+        model = DINABaseline()
+        model.q_matrix_ = np.array([[1], [1]], dtype=np.int8)
+        model.slip_ = np.array([0.2, 0.2])
+        model.guess_ = np.array([0.1, 0.1])
+        model.pattern_prior_ = np.array([0.5, 0.5])
+        alpha = np.array([[0], [1]], dtype=np.int8)
+        responses = np.array([[1, 0], [0, 1]], dtype=np.int8)
+        residuals = model.response_residuals(responses, alpha)
+        self.assertAlmostEqual(residuals["dina_mean_residual"], 0.05)
+        self.assertAlmostEqual(residuals["dina_mean_master_shortfall"], 0.3)
+        self.assertAlmostEqual(residuals["dina_mean_nonmaster_excess"], 0.4)
+        np.testing.assert_allclose(
+            residuals["dina_item_predicted_p_correct"], [0.45, 0.45]
+        )
+        np.testing.assert_allclose(
+            residuals["dina_item_nonmaster_excess"], [0.9, -0.1]
+        )
+
     def test_dina_em_uses_studentwise_nonmastery_probabilities(self):
         dataset = ResponseDataset(
             responses=np.array([[0], [1], [1]], dtype=np.int8),
