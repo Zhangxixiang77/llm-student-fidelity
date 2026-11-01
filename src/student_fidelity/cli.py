@@ -60,6 +60,9 @@ def main() -> None:
             seed=int(config.get("seed", 42)),
             resume=bool(config.get("resume", False)),
             max_calls=config.get("max_calls"),
+            prompt_strategy=config.get("prompt_strategy", "answer_first"),
+            dina_n_starts=int(config.get("dina_n_starts", 10)),
+            dina_max_iter=int(config.get("dina_max_iter", 100)),
         )
     output_dir = (
         args.output_dir if args.command == "demo" else config.get("output_dir", "runs/pilot")

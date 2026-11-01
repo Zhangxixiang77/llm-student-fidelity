@@ -42,6 +42,9 @@ def execute_pilot(
     seed: int = 42,
     resume: bool = False,
     max_calls: int | None = None,
+    prompt_strategy: str = "answer_first",
+    dina_n_starts: int = 10,
+    dina_max_iter: int = 100,
 ) -> dict[str, Any]:
     """Run one experimental cell; callers must repeat cells/seeds for the full design."""
 
@@ -52,7 +55,9 @@ def execute_pilot(
     if n_students < 1:
         raise ValueError("n_students must be positive")
 
-    dina = DINABaseline().fit(fitting)
+    dina = DINABaseline(
+        max_iter=dina_max_iter, n_starts=dina_n_starts, seed=seed + 9
+    ).fit(fitting)
     target_alpha = dina.sample_patterns(n_students, seed + 1)
     if persona_kind == "attribute":
         personas = attribute_personas(target_alpha, dataset.attribute_ids)
@@ -78,6 +83,7 @@ def execute_pilot(
             extra_body=simulator_config.get("extra_body"),
             temperature_supported=bool(simulator_config.get("temperature_supported", True)),
             fixed_temperature=simulator_config.get("fixed_temperature"),
+            prompt_strategy=prompt_strategy,
         )
     else:
         raise ValueError(f"unsupported simulator type: {simulator_type}")
@@ -96,7 +102,10 @@ def execute_pilot(
             "persona": persona_kind,
             "state": state,
             "temperature": temperature,
+            "prompt_strategy": prompt_strategy,
             "n_virtual_students": n_students,
+            "dina_n_starts": dina_n_starts,
+            "dina_max_iter": dina_max_iter,
             "seed": seed,
         },
         "simulator": simulator_config,
@@ -190,7 +199,10 @@ def execute_pilot(
             "persona": persona_kind,
             "state": state,
             "temperature": temperature,
+            "prompt_strategy": prompt_strategy,
             "n_virtual_students": n_students,
+            "dina_n_starts": dina_n_starts,
+            "dina_max_iter": dina_max_iter,
             "baselines": list(baseline_names),
             "noise_repeats": noise_repeats,
             "seed": seed,
@@ -198,6 +210,13 @@ def execute_pilot(
         },
         "configuration_sha256": configuration_sha256,
         "simulator": simulator.metadata(),
+        "dina_fit": {
+            "training_log_likelihood": dina.training_log_likelihood_,
+            "best_start": dina.best_start_,
+            "n_iter": dina.n_iter_,
+            "converged": dina.converged_,
+            "fit_history": dina.fit_history_,
+        },
         "noise_delta_95": delta,
         "results": results,
         "inference_note": (

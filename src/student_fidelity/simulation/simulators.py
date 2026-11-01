@@ -7,7 +7,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import numpy as np
@@ -101,9 +101,12 @@ class OpenAICompatibleSimulator(StudentSimulator):
         extra_body: dict[str, Any] | None = None,
         temperature_supported: bool = True,
         fixed_temperature: float | None = None,
+        prompt_strategy: Literal["answer_first", "error_examples"] = "answer_first",
     ):
         if fixed_temperature is not None and not 0 <= fixed_temperature <= 2:
             raise ValueError("fixed_temperature must be between zero and two")
+        if prompt_strategy not in {"answer_first", "error_examples"}:
+            raise ValueError("prompt_strategy must be answer_first or error_examples")
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key_env = api_key_env
@@ -111,6 +114,7 @@ class OpenAICompatibleSimulator(StudentSimulator):
         self.extra_body = dict(extra_body or {})
         self.temperature_supported = temperature_supported
         self.fixed_temperature = fixed_temperature
+        self.prompt_strategy = prompt_strategy
 
     def answer(
         self,
@@ -125,9 +129,18 @@ class OpenAICompatibleSimulator(StudentSimulator):
         history_text = (
             json.dumps(history, ensure_ascii=False) if history else "No previous answers."
         )
+        error_instruction = ""
+        if self.prompt_strategy == "error_examples":
+            error_instruction = """
+Use these only as examples of mistakes a student can make, not as a demand to err:
+adding numerators and denominators directly, or failing to regroup when subtracting
+a fraction from a whole number. If such a mistake follows from this student's profile,
+reproduce it; otherwise respond as this student would.
+"""
         prompt = f"""{persona.render()}
 
 Answer as this student, not as an assistant trying to maximize accuracy.
+{error_instruction}
 Give the final answer first, then optionally show brief work. Return only JSON:
 {{"final_answer": "...", "work": "..."}}
 
@@ -184,6 +197,7 @@ Current question ({item.item_id}):
             "network_access": True,
             "temperature_supported": self.temperature_supported,
             "fixed_temperature": self.fixed_temperature,
+            "prompt_strategy": self.prompt_strategy,
             "extra_body": self.extra_body,
         }
 

@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 
 from student_fidelity.data import ResponseDataset
 from student_fidelity.simulation.personas import Persona
-from student_fidelity.simulation.simulators import Item, StructuredAnswerError, StudentSimulator
+from student_fidelity.simulation.simulators import Item, StudentSimulator
 
 
 def normalize_answer(value: str) -> str:
@@ -158,7 +158,9 @@ def run_simulation(
                 attempts += 1
                 try:
                     answer = simulator.answer(persona, item, history, temperature)
-                except StructuredAnswerError as error:
+                except Exception as error:
+                    # Every attempted request must remain in the local ledger, including
+                    # transport errors that occur before a structured response exists.
                     failure = {
                         "student_id": f"virtual_{student_index + 1:04d}",
                         "item_id": item.item_id,
@@ -166,9 +168,10 @@ def run_simulation(
                         "persona_kind": persona.kind,
                         "state": state,
                         "temperature": temperature,
+                        "error_type": type(error).__name__,
                         "error": str(error),
-                        "raw_response": error.raw_response,
-                        "response_metadata": error.response_metadata,
+                        "raw_response": getattr(error, "raw_response", None),
+                        "response_metadata": getattr(error, "response_metadata", {}),
                     }
                     output.write(json.dumps(failure, ensure_ascii=False) + "\n")
                     output.flush()
