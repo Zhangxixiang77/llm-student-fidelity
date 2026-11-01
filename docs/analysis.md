@@ -26,7 +26,7 @@ PYTHONPATH=src python scripts/audit_run.py \
 
 审计在同一个真人拟合半上估计 DINA 与 logit-link G-DINA，并在同一个留出半上比较逐学生边际对数似然。`gdina_minus_dina_mean_holdout_log_likelihood` 为正表示 G-DINA 的留出预测更好；`paired_student_bootstrap_95_ci` 通过对学生成对重采样反映这一单次切分的不确定性。区间下界大于零时，`provisional_dimension_b_model` 暂选 G-DINA，否则暂选 DINA。
 
-这只是研究计划中模型选择规则的 pilot 实现，不等于关卡 1 通过。G-DINA 使用饱和题目反应函数、弱 ridge 和确定性的 DINA 式初始化；审计记录迭代次数、收敛状态、正则化强度和名义参数量。DINA 默认使用 1 组原确定性初值和 9 组可复现随机初值；随机初值从 Dirichlet 掌握模式先验及独立 slip/guess 区间抽取。每组独立运行 EM，按最终训练边际对数似然选优，完整保留各组似然、迭代次数和收敛状态，不因未收敛而静默丢弃。正式分析仍需用 R 的 GDINA／CDM 复核并完成外部分类准确性验证。重复切分与题目对检验由下方独立命令执行。
+这只是研究计划中模型选择规则的 pilot 实现，不等于关卡 1 通过。G-DINA 使用饱和题目反应函数、弱 ridge 和确定性的 DINA 式初始化；审计记录迭代次数、收敛状态、正则化强度和名义参数量。DINA 默认使用 1 组原确定性初值和 9 组可复现随机初值；随机初值从 Dirichlet 掌握模式先验及独立 slip/guess 区间抽取。每组独立运行 EM，按最终训练边际对数似然选优，完整保留各组似然、迭代次数和收敛状态，不因未收敛而静默丢弃。估计器验证以多初值、参数恢复和已发表参数对照为主，见 `docs/estimator_validation.md`；R 只作可选外部交叉检查。重复切分与题目对检验由下方独立命令执行。
 
 当暂选 G-DINA 时，实际回读也使用 G-DINA。`gdina_mean_residual` 是观察正确率减指定掌握模式下的模型预测正确率；`gdina_mean_master_shortfall` 在 DINA 理想掌握题上反向计算该残差，`gdina_mean_nonmaster_excess` 在非掌握题上正向计算。关卡 3 已在 100 人 pilot 前锁定为后者在全部 20 题上的未加权均值不超过 0.30；旧的 DINA guess＋0.30 参照不再使用。锁定规则见 `configs/pilot_gates.frcsub.yaml`，运行后不得根据结果调整。
 
@@ -41,7 +41,7 @@ PYTHONPATH=src python scripts/audit_run.py \
 
 两种统计分别进行正态近似双侧检验。test-level Holm 校正的检验族为全部 `J(J-1)/2` 个题目对；item-level Holm 校正分别在每道题的 `J-1` 个搭档内进行，并报告最大 z 值及最差搭档。log OR 遇到零单元格时仅把该单元格计数替换为 0.5，同时明确记录。期望单元格按观察样本量缩放后小于 5 的题目对会被标记；该标记用于限制正态近似解释，不是另一项失拟合检验，也不会静默删除题目对。
 
-显著题目对只能说明模型未重现的局部依赖，不能单独区分反应函数失配、Q 矩阵失配、题目内容导致的局部依赖或单次切分噪声。正式结论仍需重复切分和 R GDINA／CDM 复核。
+显著题目对只能说明模型未重现的局部依赖，不能单独区分反应函数失配、Q 矩阵失配、题目内容导致的局部依赖或单次切分噪声。正式结论仍需重复切分，并结合正确设定模拟中的拒绝率校准；R GDINA／CDM 可作为可选外部复核。
 
 ## 预先固定的 Q 矩阵／属性聚合敏感性
 
@@ -69,12 +69,12 @@ PYTHONPATH=src python scripts/repeated_split_diagnostics.py \
   --itemfit-simulations 100000 \
   --gdina-max-iter 300 \
   --dina-max-iter 300 \
-  --dina-starts 10
+  --dina-starts 30
 ```
 
 `--gdina-max-iter 300` 与 `--dina-max-iter 300` 是计算收敛设置：较低的上限可能让部分切分尚未收敛，未收敛结果不应直接作实质解释。每次运行仍须检查两种模型的收敛状态和迭代次数。DINA 的 `dina_multistart_training_log_likelihood_gain` 衡量最优初值相对原确定性初值的训练似然增益；若随机初值只带来很小增益而留出模型差保持不变，才可说明主要结论不太像由单次初始化的局部最优造成。recurrence 描述对切分的稳定性，不是把相关切分当作独立样本生成新的确认性 p 值，也不会自动删题或改换维度 B 的模型。
 
-## R GDINA 包独立复核（尚未执行）
+## 可选：R GDINA 包独立复核（尚未执行）
 
 `scripts/r_cdm_crosscheck.R` 使用 R `GDINA` 包分别估计 DINA 与 logit-link G-DINA，按完整掌握模式概率和掌握模式先验手动计算留出学生的边际对数似然。DINA 使用 `nstarts` 多初值；输出逐切分训练／留出指标和配对差汇总。该脚本不调用任何 LLM，也不把训练后验当作留出预测。
 
@@ -118,4 +118,4 @@ FrcSub 主 Q 矩阵始终为 `original_8`。模式层回读不进入正式分析
 - `readback_ceiling` 对同一批指定掌握模式重复生成并回读，报告逐属性与模式层可达天花板；重复次数写入结果。
 - 能力泄漏必须与真人拟合 guess 及其拟合质量一起解释。若真人 DINA 拟合不足，单独比较泄漏率不能通过方法关卡。
 
-当前实现尚未完成外部分类准确性验证和 R GDINA／CDM 复核，因此 `audit.json` 不会自动宣布 pilot 关卡通过。生成学生数很小时不运行 bootstrap 三档判定；CDM 对照与 Q 敏感性中的配对 bootstrap 只描述真人留出拟合差，不是 LLM 指标的正式推断。正式分析仍需预先规定的样本量、重复切分和置信区间方案。
+当前实现尚未完成外部分类准确性验证，因此 `audit.json` 不会自动宣布 pilot 关卡通过。Python 估计器验证的组成与限制见 `docs/estimator_validation.md`，R GDINA／CDM 不是必需路径。生成学生数很小时不运行 bootstrap 三档判定；CDM 对照与 Q 敏感性中的配对 bootstrap 只描述真人留出拟合差，不是 LLM 指标的正式推断。正式分析仍需预先规定的样本量、重复切分和置信区间方案。
