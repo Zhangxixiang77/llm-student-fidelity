@@ -6,7 +6,7 @@ import json
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -20,6 +20,8 @@ from student_fidelity.q_sensitivity import (
     FRCSUB_Q_VARIANT_SPECS,
     q_matrix_sensitivity,
 )
+
+DimensionBModel = Literal["dina", "gdina"]
 
 FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES = (
     "separate_whole_from_fraction",
@@ -36,11 +38,20 @@ def audit_run(
     comparison_bootstraps: int = 500,
     itemfit_simulations: int | None = None,
     dina_starts: int = 10,
+    dina_max_iter: int = 100,
+    gdina_max_iter: int = 100,
+    dimension_b_model: DimensionBModel | None = None,
 ) -> dict[str, Any]:
-    """Analyze stored responses without making model calls or treating small pilots as inference."""
+    """Analyze stored responses without making model calls or treating small pilots as inference.
+
+    Formal audits should pass the preregistered dimension_b_model explicitly. If it
+    is omitted, the holdout comparison supplies an exploratory provisional choice.
+    """
 
     if ceiling_repeats < 1:
         raise ValueError("ceiling_repeats must be positive")
+    if dimension_b_model not in {None, "dina", "gdina"}:
+        raise ValueError("dimension_b_model must be 'dina', 'gdina', or None")
     run_dir = Path(run_dir)
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     records = [
@@ -52,8 +63,10 @@ def audit_run(
     responses, target_alpha = _load_scored_responses(dataset, run_dir, scored, n_students)
     seed = int(summary["design"]["seed"])
     fitting, holdout = train_test_split(dataset, test_size=0.5, seed=seed)
-    dina = DINABaseline(n_starts=dina_starts, seed=seed + 9).fit(fitting)
-    gdina = GDINABaseline().fit(fitting)
+    dina = DINABaseline(
+        max_iter=dina_max_iter, n_starts=dina_starts, seed=seed + 9
+    ).fit(fitting)
+    gdina = GDINABaseline(max_iter=gdina_max_iter).fit(fitting)
     fit_comparison = compare_cdm_fits(
         dina,
         gdina,
@@ -61,6 +74,14 @@ def audit_run(
         holdout,
         n_boot=comparison_bootstraps,
         seed=seed + 5,
+    )
+    selected_dimension_b = dimension_b_model or fit_comparison[
+        "provisional_dimension_b_model"
+    ]
+    dimension_b_source = (
+        "preregistered_argument"
+        if dimension_b_model is not None
+        else "exploratory_holdout_rule"
     )
     pair_fit = {
         "dina": item_pair_fit(
@@ -100,8 +121,12 @@ def audit_run(
         if summary["design"]["persona"] == "attribute":
             alpha = target_alpha[rows]
             estimated = dina.map_patterns(selected)
-            result.update(readback_agreement(alpha, estimated))
+            dina_readback = readback_agreement(alpha, estimated)
+            # Retain the original unprefixed DINA keys for backward compatibility.
+            result.update(dina_readback)
+            result.update({f"dina_{key}": value for key, value in dina_readback.items()})
             result.update(implicit_slip_guess(selected, alpha, dataset.q_matrix))
+            result.update(dina.response_residuals(selected, alpha))
             gdina_estimated = gdina.map_patterns(selected)
             gdina_readback = readback_agreement(alpha, gdina_estimated)
             result.update(
@@ -117,16 +142,22 @@ def audit_run(
                 if attribute in FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES
             ]
             if eligible_indices:
-                eligible_agreement = (alpha == gdina_estimated)[:, eligible_indices].mean(axis=0)
-                result["gdina_eligible_attribute_readback_agreement"] = float(
-                    eligible_agreement.mean()
-                )
-                result["gdina_eligible_attribute_readback_by_attribute"] = {
-                    dataset.attribute_ids[index]: float(agreement)
-                    for index, agreement in zip(
-                        eligible_indices, eligible_agreement, strict=True
+                for model_name, model_estimated in (
+                    ("dina", estimated),
+                    ("gdina", gdina_estimated),
+                ):
+                    eligible_agreement = (alpha == model_estimated)[:, eligible_indices].mean(
+                        axis=0
                     )
-                }
+                    result[f"{model_name}_eligible_attribute_readback_agreement"] = float(
+                        eligible_agreement.mean()
+                    )
+                    result[f"{model_name}_eligible_attribute_readback_by_attribute"] = {
+                        dataset.attribute_ids[index]: float(agreement)
+                        for index, agreement in zip(
+                            eligible_indices, eligible_agreement, strict=True
+                        )
+                    }
         return result
 
     all_rows = list(range(n_students))
@@ -172,22 +203,45 @@ def audit_run(
             target_alpha, seed=seed + 4, repeats=ceiling_repeats
         )
         primary = evaluate_rows(all_rows)
+        selected_ceiling = ceiling if selected_dimension_b == "dina" else gdina_ceiling
+        eligible_indices = [
+            index
+            for index, attribute in enumerate(dataset.attribute_ids)
+            if attribute in FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES
+        ]
+        eligible_ceilings = {
+            dataset.attribute_ids[index]: selected_ceiling[
+                "attribute_readback_by_attribute"
+            ][index]
+            for index in eligible_indices
+        }
+        selected_gate_3_metric = f"{selected_dimension_b}_mean_nonmaster_excess"
         gate_references = {
             "warning": "Descriptive pilot references only; small cells cannot certify a gate.",
+            "dimension_b_model": selected_dimension_b,
+            "dimension_b_model_source": dimension_b_source,
             "gate_2_attribute_min_0_80": (
-                min(gdina_ceiling["attribute_readback_by_attribute"]) >= 0.80
+                min(eligible_ceilings.values()) >= 0.80 if eligible_ceilings else None
+            ),
+            "gate_2_eligible_attribute_ceilings": eligible_ceilings,
+            "gate_2_all_attribute_min_0_80": (
+                min(selected_ceiling["attribute_readback_by_attribute"]) >= 0.80
             ),
             "gate_2_pattern_min_0_50": (
-                gdina_ceiling["pattern_readback_agreement"] >= 0.50
+                selected_ceiling["pattern_readback_agreement"] >= 0.50
             ),
             "gate_2_eligible_attributes": list(FRCSUB_ELIGIBLE_READBACK_ATTRIBUTES),
             "gate_2_pattern_readback_enabled": False,
-            "gate_3_metric": "gdina_mean_nonmaster_excess",
+            "gate_3_metric": selected_gate_3_metric,
             "gate_3_threshold_max_0_30": 0.30,
-            "gate_3_observed_nonmaster_excess": primary["gdina_mean_nonmaster_excess"],
+            "gate_3_observed_nonmaster_excess": primary[selected_gate_3_metric],
             "gate_3_within_descriptive_bound": (
-                primary["gdina_mean_nonmaster_excess"] <= 0.30
+                primary[selected_gate_3_metric] <= 0.30
             ),
+            "gate_3_candidates_descriptive": {
+                "dina_mean_nonmaster_excess": primary["dina_mean_nonmaster_excess"],
+                "gdina_mean_nonmaster_excess": primary["gdina_mean_nonmaster_excess"],
+            },
         }
 
     result = {
@@ -236,6 +290,9 @@ def write_audit(
     comparison_bootstraps: int = 500,
     itemfit_simulations: int | None = None,
     dina_starts: int = 10,
+    dina_max_iter: int = 100,
+    gdina_max_iter: int = 100,
+    dimension_b_model: DimensionBModel | None = None,
 ) -> Path:
     run_dir = Path(run_dir)
     result = audit_run(
@@ -245,6 +302,9 @@ def write_audit(
         comparison_bootstraps=comparison_bootstraps,
         itemfit_simulations=itemfit_simulations,
         dina_starts=dina_starts,
+        dina_max_iter=dina_max_iter,
+        gdina_max_iter=gdina_max_iter,
+        dimension_b_model=dimension_b_model,
     )
     output_path = run_dir / "audit.json"
     output_path.write_text(

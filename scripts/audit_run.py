@@ -16,6 +16,14 @@ def main() -> None:
     parser.add_argument("--ceiling-repeats", type=int, default=100)
     parser.add_argument("--comparison-bootstraps", type=int, default=500)
     parser.add_argument("--dina-starts", type=int, default=10)
+    parser.add_argument("--dina-max-iter", type=int, default=100)
+    parser.add_argument("--gdina-max-iter", type=int, default=100)
+    parser.add_argument(
+        "--dimension-b-model",
+        choices=["dina", "gdina"],
+        default=None,
+        help="Preregistered model for gate references (default: exploratory holdout rule)",
+    )
     parser.add_argument(
         "--itemfit-simulations",
         type=int,
@@ -31,6 +39,9 @@ def main() -> None:
         comparison_bootstraps=args.comparison_bootstraps,
         itemfit_simulations=args.itemfit_simulations,
         dina_starts=args.dina_starts,
+        dina_max_iter=args.dina_max_iter,
+        gdina_max_iter=args.gdina_max_iter,
+        dimension_b_model=args.dimension_b_model,
     )
     print(f"Audit written to {output}")
 
